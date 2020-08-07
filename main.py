@@ -22,6 +22,8 @@ def get_arguments():
     parser.add_argument('--algorithm', type=str, default='non_private',help='cluster, HRG, GraphSample')
     parser.add_argument('--eq', type=int, default=2000,help='least iteration for MCMC to get equilibrium')
     parser.add_argument('--stop', type=int, default=4000,help='maximum iteration for MCMC to get equilibrium')
+    parser.add_argument('--loss_sample', type = str, default='A', help = 'A, logA, AX, logAX')
+
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='Disables CUDA training.')
     parser.add_argument('--fastmode', action='store_true', default=False,

@@ -114,7 +114,33 @@ class graph_sampleWorker(Worker):
             return 0
 
     def GetScore(self):
-        return -np.sum(np.abs(self.adj-self.realadj))
+        if self.args.loss_sample == 'A':
+            return -np.sum(np.abs(self.adj-self.realadj))
+        elif self.args.loss_sample == 'logA':
+            loss_A = np.sum(np.abs(self.adj - self.realadj))
+            if loss_A==0:
+                return 1
+            else:
+                return -math.log(loss_A)
+        elif self.args.loss_sample == 'AX':
+            self.AHat = self.normalization(self.adj)
+            return -np.sum(np.abs(np.matmul(self.AHat, self.features)-self.AHatX))
+        elif self.args.loss_sample == 'logAX':
+            loss_AX = np.sum(np.abs(np.matmul(self.AHat, self.features)-self.AHatX))
+            if loss_AX == 0:
+                return 1
+            else:
+                return -math.log(loss_AX)
+
+    def normalization(self, matrix):
+        ret = matrix + np.diag(self.N)
+        rowsum = np.array(ret.sum(1)) * 1.0
+        r_inv = np.power(rowsum, -1).flatten()
+        r_inv[np.isinf(r_inv)] = 0.
+        r_mat_inv = sp.diags(r_inv)
+        mx = r_mat_inv.dot(ret)
+
+        return mx
 
     def run(self):
         #set two threshold parameters to manually control convergence
@@ -125,6 +151,8 @@ class graph_sampleWorker(Worker):
         newMeanL = -1e49
         interval = 65536
         self.N = self.adj.shape[0]
+        self.realAHat = self.normalization(self.adj)
+        self.AHatX = np.matmul(self.realAHat, self.features)
         max_len = np.max(1e8, thresh_eq*self.N)
         trace = np.zeros(max_len)
         self.len = 0
