@@ -11,7 +11,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from cluster_worker import ClusterWorker
-from sample_worker import HRGWorker, graph_sampleWorker
+from sample_worker import HRGWorker, GraphClusterWorker
 from gcn_trainer import GCNTrainer
 from labeler import Labeler
 from utils import init_logger
@@ -19,10 +19,9 @@ from utils import init_logger
 
 def get_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--algorithm', type=str, default='non_private',help='cluster, HRG, GraphSample')
+    parser.add_argument('--algorithm', type=str, default='non_private',help='cluster, HRG, graph_cluster')
     parser.add_argument('--eq', type=int, default=2000,help='least iteration for MCMC to get equilibrium')
     parser.add_argument('--stop', type=int, default=4000,help='maximum iteration for MCMC to get equilibrium')
-    parser.add_argument('--loss_sample', type = str, default='A', help = 'A, logA, AX, logAX')
 
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='Disables CUDA training.')
@@ -71,6 +70,16 @@ def get_arguments():
     parser.add_argument('--knn', type=int, default=-1)
     parser.add_argument('--noise-type', type=str, default='laplace')
     parser.set_defaults(assign_seed=42)
+
+    ########### parameters for graph clustering ############
+    parser.add_argument('--cluster_method', type=str, default='NodePairSample', help='NodePairSample, GANC, multi_likelihood')
+    parser.add_argument('utility_cluster', type=str, default='curvature', help='curvature, modularity')
+    parser.add_argument('utility_sample',type=str, default='log likelihood', choices=['log likelihood', 'ave_pro'])
+    parser.add_argument('MCMC_utility', type=str, default='multi_likelihood', help='multi_likelihood, GANC')
+    parser.add_argument('non_private', default=True)
+    parser.add_argument('epsilon1', type=float, default=0.2)
+    parser.add_argument('epsilon2', type=float, default=0.2)
+    parser.add_argument('epsilon3', type=float, default=0.2)
 
     return parser.parse_args()
 
@@ -151,10 +160,9 @@ def main():
             trainer.train()
             trainer.test(args.eval_degree)
 
-    elif args.algorithm == 'GraphSample':
+    elif args.algorithm == 'graph_cluster':
         if args.test:
-            worker = graph_sampleWorker(args, dataset=args.dataset)
-            worker.run() # run MCMC sampling
+            worker = GraphClusterWorker(args, dataset=args.dataset)
             trainer = GCNTrainer(args, worker=worker)
             trainer.init_model(model_path=args.model_path)
             trainer.test(args.eval_degree)
@@ -162,19 +170,17 @@ def main():
         else:
             cur_time = datetime.datetime.now().strftime("%m-%d-%H:%M:%S.%f")[:-3]
 
-            subdir = 'GraphSample_eps-{}_del-{}_{}'.format(args.epsilon, args.delta,cur_time)
+            subdir = 'GraphSample_eps-{}_del-{}_{}'.format(args.epsilon, args.delta, cur_time)
 
             print('subdir = {}'.format(subdir))
             init_logger('./logs_{}'.format(args.dataset), subdir, print_log=False)
             logging.info(str(args))
 
-            worker = graph_sampleWorker(args, dataset=args.dataset)
-            worker.run()
+            worker = GraphClusterWorker(args, dataset=args.dataset)
             trainer = GCNTrainer(args, subdir=subdir, worker=worker)
             trainer.init_model()
             trainer.train()
             trainer.test(args.eval_degree)
-
 
 
 if __name__ == "__main__":
