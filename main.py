@@ -73,8 +73,9 @@ def get_arguments():
 
     ########### parameters for graph clustering ############
     parser.add_argument('--cluster_method', type=str, default='NodePairSample', help='NodePairSample, GANC, multi_likelihood')
-    parser.add_argument('utility_cluster', type=str, default='curvature', help='curvature, modularity')
+    parser.add_argument('utility_cluster', type=str, default='curvature', help='curvature')
     parser.add_argument('utility_sample',type=str, default='log likelihood', choices=['log likelihood', 'ave_pro'])
+    parser.add_argument('min_cluster_size', type=int, default=1)
     parser.add_argument('MCMC_utility', type=str, default='multi_likelihood', help='multi_likelihood, GANC')
     parser.add_argument('non_private', default=True)
     parser.add_argument('epsilon1', type=float, default=0.2)
