@@ -88,19 +88,20 @@ class GraphClusterWorker():
 
     def runCluster(self):
         file = self.dataset + '.graphml'
-        G = nx.read_graphml(file, node_type=int)
-        self.n = G.number_of_nodes()
+        self.G = nx.read_graphml(file, node_type=int)
+        self.n = self.G.number_of_nodes()
         if self.args.non_private == True:
-            self.D = paris(G)
+            self.D = paris(self.G)
         else:
-            self.size, self.top, self.D = private_paris(G)
+            # the cluster graph, the size of each node in dendrogram, the top nodes, the dendrogram
+            self.F, self.size, self.top, self.D = private_paris(self.G)
 
         self.numofcluster = self.n - np.asarray(self.D).shape[0]
 
-        pos_x = nx.get_node_attributes(G, 'pos_x')
-        pos_y = nx.get_node_attributes(G, 'pos_y')
-        pos = {u: (pos_x[u], pos_y[u]) for u in G.nodes()}
-        plot_best_clusterings(G, self.D, 4, pos)
+        pos_x = nx.get_node_attributes(self.G, 'pos_x')
+        pos_y = nx.get_node_attributes(self.G, 'pos_y')
+        pos = {u: (pos_x[u], pos_y[u]) for u in self.G.nodes()}
+        plot_best_clusterings(self.G, self.D, 4, pos)
 
     def runSample(self):
         # set two threshold parameters to manually control convergence
@@ -114,6 +115,7 @@ class GraphClusterWorker():
         self.len = 0
         self.check = np.zeros(10000)
         check_num = 0
+        self.score = 0
 
         convergence = 0
         t = 0
@@ -121,6 +123,7 @@ class GraphClusterWorker():
         while convergence == 0:
             oldMeanL = newMeanL
             newMeanL = 0
+            ## get initial score
             if self.args.utility_sample == 'ave_pro':
                 E = 0 # total edges
                 numerator = 0
@@ -128,17 +131,29 @@ class GraphClusterWorker():
                     E += r[2]*self.size[r[5]]
                     numerator += (r[2]*self.size[r[5]])**2/(self.size[r[0]]*self.size[r[1]])
 
-                self.ave_pro = numerator/E
+                self.score = numerator/E
+            elif self.args.utility_sample == 'log likelihood':
+                for r in self.D:
+                    self.score += -len(r[3])*len(r[4])*(r[2]*math.log(r[2])+(1-r[2])*math.log(1-r[2]))
+                    # add top nodes log likelihoods
+                for (u,v) in self.F.edges():
+                    if not self.F[u][v]['pro']==0:
+                        self.score += -len(self.D[u][3])*len(self.D[v][3])*(self.F[u][v]['pro']*math.log(self.F[u][v]['pro'])
+                                                                        +(1-self.F[u][v]['pro'])*math.log(1-self.F[u][v]['pro']))
 
             for i in range(interval):
                 # choose 2 nodes in the dendrogram to change position
                 nodes = random.sample(range(0, 2 * self.n - self.numofcluster), 2)
+                # in case there is parent and child relation between the nodes to be changed
+                while nodes[0] in self.D[nodes[1]][3] or nodes[0] in self.D[nodes[1]][4] or \
+                    nodes[1] in self.D[nodes[0]][3] or nodes[1] in self.D[nodes[0]][3]:
+                    nodes = random.sample(range(0, 2 * self.n - self.numofcluster), 2)
+
                 self.exchange(nodes)
-                score = self.GetScore(self.D)
-                newMeanL += score
+                newMeanL += self.score
 
                 if (self.len < max_len):
-                    trace[self.len] = score
+                    trace[self.len] = self.score
                     self.len = self.len + 1
                 t = t + 1
 
@@ -151,7 +166,7 @@ class GraphClusterWorker():
             check_num = check_num + 1
             judge_convergence = self.judge_converge()
 
-            if (judge_convergence and (t > thresh_eq * self.N)):
+            if (judge_convergence and (t > thresh_eq * self.n)):
                 convergence = 1
             elif t > thresh_stop * self.n or t >= max_len:
                 convergence = 1
@@ -165,40 +180,97 @@ class GraphClusterWorker():
             # top nodes change will not affect the utility function
             return
         elif nodes[0] in self.top:  # one node is top node
-            F = self.D
-            #find the parent of node[1]
-            for i in range(self.n-self.numofcluster):
-                if self.D[i][0] == nodes[1]:
-                    # change the copied dendrogram
+            D_copy = self.D
+            size_copy = self.size
+            top_copy = self.top
+            F_copy = self.F
 
-                    # determine wether the dendrogram will change
-                    if self.args.utility_sample == 'log likelihood':
+            # renew the top list
+            top_copy.remove(nodes[0])
+            top_copy.append(nodes[1])
 
-                        prob =
-                    else:
-                        prob = self.calc_ave_prob(F)
+            ## renew the dendrogram
+            #find all the parents of node[1]
+            parents = []
+            this_top = 0
+            for r in self.D:
+                if nodes[1] in r[3] or nodes[1] in r[4]:
+                    parents.append(r[5])
+                    if r[5] in self.top:
+                        this_top = r[5] # record the relative top nodes
+                    # update child if it's a direct parent
+                    if r[0] == nodes[1]:
+                        D_copy[r[5]][0] = nodes[0]
+                    elif r[1] == nodes[1]:
+                        D_copy[r[5]][1] = nodes[0]
+            # renew left and right child nodes
+            for p in parents:
+                if nodes[1] in self.D[p][3]:
+                    left_right = 3
+                else:
+                    left_right = 4
 
-                    if random.uniform(0, 1) > prob:
-                        self.D = F
-                    break
-                elif self.D[i][1] == nodes[1]:
-                    # determine wether the dendrogram will change
-                    prob = self.calc_ave_prob(F)
-                    if random.uniform(0, 1) > prob:
-                        self.D = F
-                    break
+                D_copy[p][left_right].remove(nodes[1])
+                D_copy[p][left_right].remove(D_copy[nodes[1]][3])
+                D_copy[p][left_right].remove(D_copy[nodes[1]][4])
+                D_copy[p][left_right].append(nodes[0])
+                D_copy[p][left_right].append(D_copy[nodes[0]][3])
+                D_copy[p][left_right].append(D_copy[nodes[0]][4])
+             # renew the probabilities of nodes
+            for p in parents:
+                pro = self.calc_prob(D_copy, p)
+                D_copy[p][2] = pro
+            #renew the probabilities between clusters
+            F_copy.remove_node(nodes[0])
+            F_copy.add_node(nodes[1])
+            for node in F_copy.nodes:
+                if not node==nodes[1]:
+                    pro = self.calc_cluster_prob(D_copy,[node, nodes[1]])
+                    F_copy.add_edge(node, nodes[1])
+                    F_copy[node][nodes[1]]['pro'] = pro
+                if not node==this_top:
+                    pro = self.calc_cluster_prob(D_copy,[node, this_top])
+                    if not F_copy.has_edge(node, this_top):
+                        F_copy.add_edge(node, this_top)
+                    F_copy[node][this_top]['pro'] = pro
+
+            #calculate the utility function
+            if self.args.utility_sample == 'ave_pro':
+
+
+
+            if self.args.utility_sample == 'log likelihood':
+                    prob =
+            else:
+                    prob = self.calc_ave_prob(D_copy)
+
+            if random.uniform(0, 1) > prob:
+                    self.D = D_copy
         elif nodes[1] in self.top:
-        else:
+        else: # both the nodes are not top nodes
             a = 2
+
+    def calc_prob(self, D, node):
+        """
+        :param D: dendrogram
+        :param node: nodes to be calculated
+        :return: probability
+        """
+        total = len(D[node][3])*len(D[node][4])
+        # calculate edges
+        num_edge = 0
+        for edge in self.G.edges:
+            if (edge[0] in D[node][3] and edge[1] in D[node][4]) or (edge[1] in D[node][3] and edge[0] in D[node][4]):
+                num_edge += 1
+        return num_edge/total
+
+    def calc_cluster_prob(self, D, nodes):
 
     def calc_log_likelihood(self, D):
         return np.min(1, )
 
     def calc_ave_prob(self, D):
         return np.min(1, )
-
-
-
 
     def judge_converge(self):
         stationary = 0
