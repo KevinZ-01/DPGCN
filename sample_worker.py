@@ -81,6 +81,8 @@ class GraphClusterWorker():
     def __init__(self, args, dataset=''):
         self.args = args
         self.dataset = dataset
+        self.sensitivity_cluster = 
+        self.sensitivity_sample =
         self.runCluster()
         self.runSample()
         self.addLaplacian()
@@ -120,27 +122,29 @@ class GraphClusterWorker():
         convergence = 0
         t = 0
         t0 = time.time()
+        ## get initial score
+        if self.args.utility_sample == 'ave_pro':
+            self.E = 0  # total edges
+            numerator = 0
+            for r in self.D:
+                self.E += r[2] * self.size[r[5]]
+                numerator += (r[2] * self.D[r][3] * self.D[r][4]) ** 2 / (self.size[r[0]] * self.size[r[1]])
+            for (u,v) in self.F.edges():
+                numerator += (self.F[u][v]['pro']*self.size[u]*self.size[v]) ** 2 / (self.size[u]*self.size[v])
+            self.score = numerator / self.E
+        elif self.args.utility_sample == 'log likelihood':
+            for r in self.D:
+                self.score += -len(r[3]) * len(r[4]) * (r[2] * math.log(r[2]) + (1 - r[2]) * math.log(1 - r[2]))
+                # add top nodes log likelihoods
+            for (u, v) in self.F.edges():
+                if not self.F[u][v]['pro'] == 0:
+                    self.score += -(len(self.D[u][3])+len(self.D[u][4]) )* (len(self.D[v][3]+len(self.D[v][4]))) * (
+                                self.F[u][v]['pro'] * math.log(self.F[u][v]['pro'])
+                                + (1 - self.F[u][v]['pro']) * math.log(1 - self.F[u][v]['pro']))
+
         while convergence == 0:
             oldMeanL = newMeanL
             newMeanL = 0
-            ## get initial score
-            if self.args.utility_sample == 'ave_pro':
-                E = 0 # total edges
-                numerator = 0
-                for r in self.D:
-                    E += r[2]*self.size[r[5]]
-                    numerator += (r[2]*self.size[r[5]])**2/(self.size[r[0]]*self.size[r[1]])
-
-                self.score = numerator/E
-            elif self.args.utility_sample == 'log likelihood':
-                for r in self.D:
-                    self.score += -len(r[3])*len(r[4])*(r[2]*math.log(r[2])+(1-r[2])*math.log(1-r[2]))
-                    # add top nodes log likelihoods
-                for (u,v) in self.F.edges():
-                    if not self.F[u][v]['pro']==0:
-                        self.score += -len(self.D[u][3])*len(self.D[v][3])*(self.F[u][v]['pro']*math.log(self.F[u][v]['pro'])
-                                                                        +(1-self.F[u][v]['pro'])*math.log(1-self.F[u][v]['pro']))
-
             for i in range(interval):
                 # choose 2 nodes in the dendrogram to change position
                 nodes = random.sample(range(0, 2 * self.n - self.numofcluster), 2)
@@ -181,14 +185,11 @@ class GraphClusterWorker():
             return
         elif nodes[0] in self.top:  # one node is top node
             D_copy = self.D
-            size_copy = self.size
             top_copy = self.top
             F_copy = self.F
-
             # renew the top list
             top_copy.remove(nodes[0])
             top_copy.append(nodes[1])
-
             ## renew the dendrogram
             #find all the parents of node[1]
             parents = []
@@ -236,16 +237,49 @@ class GraphClusterWorker():
 
             #calculate the utility function
             if self.args.utility_sample == 'ave_pro':
+                for p in parents:
+                    after_score = self.score - \
+                                  (self.D[p][2] ** 2 * len(self.D[p][3])*len(self.D[p][4]) +
+                                   D_copy[p][2]** 2 * len(D_copy[p][3])*len(D_copy[p][4]))/self.E
 
+                for node in F_copy.nodes():
+                    if not node == nodes[1]:
+                        after_score += F_copy[node][nodes[1]]['pro'] ** 2 * (len(D_copy[node][3]) + len(D_copy[node][4])) * (len(D_copy[nodes[1]][3]) + len(D_copy[nodes[1]][4])) - \
+                                       self.F[node][nodes[0]]['pro'] ** 2 * (len(self.D[node][3])+len(self.D[node][4])) * (len(self.D[nodes[0]][3])+len(self.D[nodes[0]][4]))
+                    if not node == this_top:
+                        after_score += F_copy[node][this_top]['pro'] ** 2 * (len(D_copy[node][3]) + len(D_copy[node][4])) * (
+                                                   len(D_copy[this_top][3]) + len(D_copy[this_top][4])) - \
+                                       self.F[node][this_top]['pro'] ** 2 * (len(self.D[node][3]) + len(self.D[node][4])) * (
+                                                   len(self.D[this_top][3]) + len(self.D[this_top][4]))
 
-
-            if self.args.utility_sample == 'log likelihood':
-                    prob =
-            else:
-                    prob = self.calc_ave_prob(D_copy)
-
-            if random.uniform(0, 1) > prob:
-                    self.D = D_copy
+            elif self.args.utility_sample == 'log likelihood':
+                after_score = 0
+                for p in parents:
+                    after_score = self.score + \
+                                  len(self.D[p][3])*len(self.D[p][4])* (self.D[p][2] * math.log(self.D[p][2]) + (1 - self.D[p][2]) * math.log(1 - self.D[p][2])) - \
+                                  len(D_copy[p][3])*len(D_copy[p][4])* (D_copy[p][2] * math.log(D_copy[p][2]) + (1 - D_copy[p][2]) * math.log(1 - D_copy[p][2]))
+                # calculate the between-cluster information entropy that has been changed
+                for node in F_copy.nodes():
+                    if not node == nodes[1]:
+                        after_score += \
+                            (len(D_copy[node][3])+len(D_copy[node][4]))*(len(D_copy[nodes[1]][3])+len(D_copy[nodes[1]][4]))*\
+                            (F_copy[node][nodes[1]]['pro'] * math.log(F_copy[node][nodes[1]]['pro']) + (1 - F_copy[node][nodes[1]]['pro']) * math.log(1 - F_copy[node][nodes[1]]['pro'])) - \
+                            (len(self.D[node][3])+len(self.D[node][4]))*(len(self.D[nodes[1]][3])+len(self.D[nodes[1]][4]))*\
+                            (self.F[node][nodes[0]]['pro'] * math.log(self.F[node][nodes[0]]['pro']) + (1 - self.F[node][nodes[0]]['pro']) * math.log(1 - self.F[node][nodes[0]]['pro']))
+                    if not node == this_top:
+                        after_score += \
+                            (len(D_copy[node][3]) + len(D_copy[node][4])) * (len(D_copy[this_top][3]) + len(D_copy[this_top][4])) * \
+                            (F_copy[node][this_top]['pro'] * math.log(F_copy[node][this_top]['pro']) + (1 - F_copy[node][this_top]['pro']) *
+                             math.log( 1 - F_copy[node][this_top]['pro'])) - \
+                            (len(self.D[node][3]) + len(self.D[node][4])) * (len(self.D[this_top][3]) + len(self.D[this_top][4])) * \
+                            (self.F[node][this_top]['pro'] * math.log(self.F[node][this_top]['pro']) + (1 - self.F[node][this_top]['pro']) *
+                             math.log(1 - self.F[node][this_top]['pro']))
+            # probability to exchange these two nodes
+            prob = math.exp()
+            if random.uniform(0, 1) < prob:
+                self.D = D_copy
+                self.F = F_copy
+                self.top = top_copy
         elif nodes[1] in self.top:
         else: # both the nodes are not top nodes
             a = 2
