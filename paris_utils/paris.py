@@ -117,7 +117,7 @@ def paris(G, copy_graph = True):
         
     return reorder_dendrogram(np.array(D))
 
-def private_paris(G, copy_graph = True):
+def private_paris(G, copy_graph = True, numofcluster = None):
     """
         :param G: graph in nx.graph format
         :param copy_graph:
@@ -159,12 +159,16 @@ def private_paris(G, copy_graph = True):
     # connected components
     cc = []
 
-    # dendrogram as list of merges
-    D = {}
+    # dendrogram as list of merges, initialize with leaf nodes of the dendrogram
+    D = {u: [None, None, None, None, None, None, None] for u in range(n)}
+
+    # scores of each cluster level
+    if numofcluster is None:
+        scores = {i+1: 0 for i in range(n)}
 
     # cluster index
     u = n
-    while n > 0:
+    while n > numofcluster-1:
         # nearest-neighbor chain, agglomerate two nodes if they are mutual nearest
         chain = [list(F.nodes())[0]]  # the first node
         while chain != []:
@@ -200,7 +204,9 @@ def private_paris(G, copy_graph = True):
                         for node in D[a - n][4]:
                             right.append(node)
                     # merge a,b
-                    D[u] = [a, b, p, left, right,u]
+                    D[u] = [a, b, p, left, right, u, None]
+                    D[a][6] = [u,0]
+                    D[b][6] = [u,1]
                     # renew top nodes
                     top.remove(a)
                     top.remove(b)
@@ -245,11 +251,14 @@ def private_paris(G, copy_graph = True):
     a, s = cc.pop()
     for b, t in cc:
         s += t
-        D.append([a, b, float("inf"), s])
+        D[a] = [a, b, float("inf"), s]
         a = u
         u += 1
 
-    return F, ss, top, reorder_dendrogram(np.array(D))
+    if numofcluster is None:
+        return scores
+    else:
+        return F, ss, top, reorder_dendrogram(np.array(D))
 
 def reorder_dendrogram(D):
     n = np.shape(D)[0] + 1

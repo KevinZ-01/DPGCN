@@ -78,6 +78,7 @@ def get_arguments():
     parser.add_argument('min_cluster_size', type=int, default=1)
     parser.add_argument('MCMC_utility', type=str, default='multi_likelihood', help='multi_likelihood, GANC')
     parser.add_argument('non_private', default=True)
+    parser.add_argument('num_cluster', type=int, default=None)
     parser.add_argument('epsilon1', type=float, default=0.2)
     parser.add_argument('epsilon2', type=float, default=0.2)
     parser.add_argument('epsilon3', type=float, default=0.2)
