@@ -155,6 +155,7 @@ def feature_reader(dataset="cora", scale='large', train_ratio=0.5, feature_size=
 
         print('#idx_train', len(idx_train))
         print('#idx_valid', len(idx_valid))
+        print('#idx_test', len(idx_test))
 
         features = normalize(features)
         features = torch.FloatTensor(np.array(features.todense()))

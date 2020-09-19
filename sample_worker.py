@@ -566,7 +566,34 @@ class GraphClusterWorker():
             return 0
 
     def addLaplacian(self):
-        self.D[:][2] = self.D[:][2] + np.random.laplace(scale=self.args.epsilon3, size=np.asarray(self.D).shape[0])
+        # python implementation of Erd˝os-R´enyi model
+        epsilon = self.args.epsilon3
+        for top_node in self.top:
+            self.calculateNoisyProb(top_node, epsilon)
+
+    def calculateNoisyProb(self, node, epsilon):
+        lambda_b = 1/(epsilon*len(self.D[node][3])*len(self.D[node][4]))
+        lambda_c = 2/(epsilon*len(self.D[node][3]+self.D[node][4])*len(self.D[node][3]+self.D[node][4]-1))
+        if lambda_b > self.args.pi1 and lambda_c > self.args.pi2:
+            edges_below = self.calculate_edge_below(node)
+            noisy_prob = edges_below + np.random.laplace(scale=epsilon)
+            noisy_prob = np.clip(noisy_prob, 0, 1)
+            for child in self.D[node][3]+self.D[node][4]:
+                if child >= self.n:
+                    self.D[child][2] = noisy_prob
+        else:
+            noisy_prob = self.D[node][2] + np.random.laplace(scale=epsilon)/(len(self.D[node][3])*len(self.D[node][4]))
+            self.D[node][2] = np.clip(noisy_prob, 0, 1)
+            self.calculateNoisyProb(self.D[node][0], epsilon)
+            self.calculateNoisyProb(self.D[node][1], epsilon)
+
+    def calculate_edge_below(self, node):
+        # calculate how many edges are under the node
+        if node < self.n:
+            return 0
+        else:
+            return self.D[node][2]*len(self.D[node][3])*len(self.D[node][4]) +\
+                    self.calculate_edge_below( self.D[node][0]) + self.calculate_edge_below(self.D[node][1])
 
     def dentoadj(self):
         self.adj = sp.coo_matrix(0, shape=(self.n, self.n), dtype=np.float32)
@@ -577,6 +604,7 @@ class GraphClusterWorker():
                     self.adj[j][k] = 1 if np.random.random() < p else 0
 
         self.adj = self.adj + self.adj.T
+
 
 
 class graph_sampleWorker(Worker):

@@ -72,16 +72,19 @@ def get_arguments():
     parser.set_defaults(assign_seed=42)
 
     ########### parameters for graph clustering ############
-    parser.add_argument('--cluster_method', type=str, default='NodePairSample', help='NodePairSample, GANC, multi_likelihood')
-    parser.add_argument('utility_cluster', type=str, default='curvature', help='curvature')
-    parser.add_argument('utility_sample',type=str, default='log likelihood', choices=['log likelihood', 'ave_pro'])
-    parser.add_argument('min_cluster_size', type=int, default=1)
-    parser.add_argument('MCMC_utility', type=str, default='multi_likelihood', help='multi_likelihood, GANC')
-    parser.add_argument('non_private', default=True)
-    parser.add_argument('num_cluster', type=int, default=None)
-    parser.add_argument('epsilon1', type=float, default=0.2)
-    parser.add_argument('epsilon2', type=float, default=0.2)
-    parser.add_argument('epsilon3', type=float, default=0.2)
+    parser.add_argument('--cluster_method', type=str, default='NodePairSample', help='NodePairSample, GANC')
+    parser.add_argument('--utility_cluster', type=str, default='curvature', help='curvature')
+    parser.add_argument('--utility_sample',type=str, default='ave_pro', choices=['log likelihood', 'ave_pro'])
+    parser.add_argument('--min_cluster_size', type=int, default=1)
+    parser.add_argument('--MCMC_utility', type=str, default='multi_likelihood', help='multi_likelihood, GANC')
+    parser.add_argument('--non_private', default=True)
+    parser.add_argument('--num_cluster', type=int, default=None)
+    parser.add_argument('--epsilon1', type=float, default=0.2)
+    parser.add_argument('--epsilon2', type=float, default=0.5)
+    parser.add_argument('--epsilon3', type=float, default=0.5)
+    parser.add_argument('--pi1', type=float, default=0.05)
+    parser.add_argument('--pi2', type=float, default=0.01)
+    parser.set_defaults(assign_seed=42)
 
     return parser.parse_args()
 
@@ -102,7 +105,7 @@ def main():
             trainer.test(args.eval_degree)
 
         else:
-            cur_time = datetime.datetime.now().strftime("%m-%d-%H:%M:%S.%f")[:-3]
+            cur_time = datetime.datetime.now().strftime('%m%d-%H%M%S')
 
             if args.mode == 'vanilla-clean':
                 subdir = 'mode-raw_ratio-{}_{}'.format(args.train_ratio, cur_time)
