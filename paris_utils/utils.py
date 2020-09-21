@@ -44,6 +44,30 @@ def plot_best_clusterings(G, D, k, pos, width = 16, height = 8):
             draw_nodes.set_edgecolor('k')
     plt.show()
 
+#Plot clustering of k clusters
+def plot_k_clusterings(G, D, top, pos, path, width = 16, height = 8):
+    plt.rcParams.update({'font.size': 24})
+    plt.figure(figsize=( width, height))
+    print(len(D))
+    print(len(D[0]))
+    print(top)
+    try:
+        length = [D[c][8] for c in top]
+    except IndexError:
+        for t in top:
+            if len(D[t]) < 9:
+                print(t, D[t])
+
+    index = np.argsort(-np.array(length))
+    colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', '0.5', '0.3', '0.8', '0.6', '0.2', '0.7', '0.1', '0.9']
+    plt.axis('off')
+    for l in range(min(len(top),len(colors))):
+        nodelist = [D[i][3]+D[i][4] for i in top[index[l]]]
+        draw_nodes = nx.draw_networkx_nodes(G, pos, node_size=50, nodelist = nodelist,node_color=colors[l])
+        draw_nodes.set_edgecolor('k')
+    plt.show()
+    plt.savefig(path)
+
 # Plot dendrogram
 def plot_dendrogram(D, logscale = True):
     plt.figure(figsize=(25, 10))
@@ -55,7 +79,22 @@ def plot_dendrogram(D, logscale = True):
     dendrogram(Dlog,leaf_rotation=90.)
     plt.axis('off')
     plt.show()
-    
+
+#plot private dendrogram
+def plot_private_dendrogram(D, path, logscale = True):
+    plt.figure(figsize=(25, 10))
+    Dlog = D.copy()
+    Dlog = np.asarray([node[0,1,7,8] for node in Dlog])
+    Dlog = reorder_dendrogram(Dlog)
+    if logscale:
+        Dlog[:,2] = np.log(Dlog[:,2])
+        Dlog[1:,2] =  Dlog[1:,2] - Dlog[1,2]
+        Dlog[0,2] = 0
+    dendrogram(Dlog, leaf_rotation=90.)
+    plt.axis('off')
+    plt.show()
+    plt.savefig(path)
+
 # Print names of the elements of the k largest clusters
 def show_largest_clusters(C, G, name, k = 10):
     index = np.argsort([-len(c) for c in C])
@@ -80,12 +119,17 @@ def rank_clustering(D):
     delta = logdist[1:] - logdist[:-1]
     return np.argsort(-delta[len(delta)//2:]) + 1 + len(delta)//2
 
-# Select the k-th best clustering
+# Select the k-th best clustering, based on the decrease of distance.
 def best_clustering(D, k = 0):
     return select_clustering(D, rank_clustering(D)[k])
 
 # Select the clustering after k merges
 def select_clustering(D, k):
+    """
+    :param D:
+    :param k:
+    :return: the n-k clusters in dict form
+    """
     n = np.shape(D)[0] + 1
     k = min(k,n - 1)
     cluster = {i:[i] for i in range(n)}
@@ -225,4 +269,12 @@ def resolution_analysis(G, resolutions):
     plt.xscale('log')
     plt.show()
 
-    
+def reorder_dendrogram(D):
+    n = np.shape(D)[0] + 1
+    order = np.zeros((2,n - 1),float)
+    order[0] = range(n - 1)
+    order[1] = np.array(D)[:, 2] # sort by distance
+    index = np.lexsort(order)
+    nindex = {i:i for i in range(n)}
+    nindex.update({n + index[t]:n + t for t in range(n - 1)})
+    return np.array([[nindex[int(D[t][0])],nindex[int(D[t][1])],D[t][2],D[t][3]] for t in range(n - 1)])[index,:]

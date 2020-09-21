@@ -117,7 +117,7 @@ def paris(G, copy_graph = True):
         
     return reorder_dendrogram(np.array(D))
 
-def private_paris(G, copy_graph = True, numofcluster = None):
+def private_paris(G, copy_graph = True, numofcluster = 1):
     """
         :param G: graph in nx.graph format
         :param copy_graph:
@@ -125,6 +125,7 @@ def private_paris(G, copy_graph = True, numofcluster = None):
          after cluster, with differential privacy
         """
     n = G.number_of_nodes()
+    N = n
     if copy_graph:
         F = G.copy()
     else:
@@ -160,7 +161,8 @@ def private_paris(G, copy_graph = True, numofcluster = None):
     cc = []
 
     # dendrogram as list of merges, initialize with leaf nodes of the dendrogram
-    D = {u: [None, None, None, None, None, None, None] for u in range(n)}
+    #left , right, probability, left, right children, node number, parent, distance, size
+    D = {u: [None, None, None, [], [], None, None, None, None] for u in range(n)}
 
     # scores of each cluster level
     if numofcluster is None:
@@ -191,20 +193,16 @@ def private_paris(G, copy_graph = True, numofcluster = None):
                     # calculate the probability
                     p = F[a][b]['weight'] / s[a]*s[b]
                     # record the nodes under this merge
-                    if a < n:
+                    if a < N:
                         left = [a]
                     else:
-                        left = D[a-n][3]
-                        for node in D[a-n][4]:
-                            left.append(node)
-                    if b < n:
+                        left = D[a][3] + D[a][4]
+                    if b < N:
                         right = [b]
                     else:
-                        right = D[a - n][3]
-                        for node in D[a - n][4]:
-                            right.append(node)
+                        right = D[b][3] + D[b][4]
                     # merge a,b
-                    D[u] = [a, b, p, left, right, u, None]
+                    D[u] = [a, b, p, left, right, u, None, d, s[a]+s[b]]
                     D[a][6] = [u,0]
                     D[b][6] = [u,1]
                     # renew top nodes
@@ -258,13 +256,13 @@ def private_paris(G, copy_graph = True, numofcluster = None):
     if numofcluster is None:
         return scores
     else:
-        return F, ss, top, reorder_dendrogram(np.array(D))
+        return F, ss, top, D
 
 def reorder_dendrogram(D):
     n = np.shape(D)[0] + 1
     order = np.zeros((2,n - 1),float)
     order[0] = range(n - 1)
-    order[1] = np.array(D)[:,2]
+    order[1] = np.array(D)[:, 2] # sort by distance
     index = np.lexsort(order)
     nindex = {i:i for i in range(n)}
     nindex.update({n + index[t]:n + t for t in range(n - 1)})

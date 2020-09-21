@@ -7,9 +7,11 @@ import math
 import torch
 import random
 import networkx as nx
+import timeit
 from utils import feature_reader, graph_reader, \
                 normalize, sparse_mx_to_torch_sparse_tensor, AdjPairs
-from paris_utils import paris, plot_best_clusterings, private_paris
+from paris_utils import paris, plot_best_clusterings, private_paris, plot_dendrogram, plot_private_dendrogram,\
+                plot_k_clusterings
 
 class Worker():
     def __init__(self, args, dataset=''):
@@ -81,35 +83,54 @@ class GraphClusterWorker():
     def __init__(self, args, dataset=''):
         self.args = args
         self.dataset = dataset
-        # calculate sensitivity
-        self.sensitivity_cluster = 2/self.args.min_cluster_size
+        self.load_data()
         self.runCluster()
-        if self.args.utility_sample == 'ave_pro':
-            self.sensitivity_sample = 2/self.E
-        elif self.args.utility_sample == 'log likelihood':
-            self.sensitivity_sample = 2*math.log(self.n) - math.log(4) + 1
-
         self.runSample()
         self.addLaplacian()
         self.dentoadj()
 
-    def runCluster(self):
-        file = self.dataset + '.graphml'
-        self.G = nx.read_graphml(file, node_type=int)
+    def load_data(self):
+        print('loading data...')
+        self.features, self.labels, self.idx_train, self.idx_val, self.idx_test \
+            = feature_reader(dataset=self.dataset, scale=self.args.scale,
+                             train_ratio=self.args.train_ratio, feature_size=self.args.feature_size)
+
+        # print('feature_size', self.features.shape)
+        self.n_features = self.features.shape[1]
+        self.n_classes = self.labels.max().item() + 1
+
+        self.edges = graph_reader(dataset=self.dataset)
+        # transform graph to nxnetwork
+        self.G = nx.Graph()
+        self.G.add_edges_from(self.edges)
         self.n = self.G.number_of_nodes()
         self.E = self.G.number_of_edges()  # total edges
+        print('dataset load finish')
+        print('number of nodes:', self.n)
+        print('number of edges:', self.E)
+
+    def runCluster(self):
+        print('clustering...')
+        time1 = timeit.timeit()
         if self.args.non_private == True:
             self.D = paris(self.G)
         else:
-            if not self.args.num_cluster is None:
+            if not self.args.num_cluster == 1:
                 # the graph of top nodes, the size of each node in dendrogram, the top nodes, the dendrogram
                 self.F, self.size, self.top, self.D = private_paris(self.G, self.args.num_cluster)
             else:
                 scores = private_paris(self.G)
                 num_cluster = np.argmax(np.asarray(scores)) + 1
                 self.F, self.size, self.top, self.D = private_paris(self.G, num_cluster)
-
-        self.numofcluster = self.n - np.asarray(self.D).shape[0]
+        time2 = timeit.timeit()
+        print('clustering finished, time cost:', time2 - time1)
+        self.numofcluster = 2*self.n - len(self.D)
+        # plot and save the dendrogram
+        print('plotting clusterings and dendrogram...')
+        pos = nx.spring_layout(self.G)
+        plot_k_clusterings(self.G, self.D, self.top, pos, 'private_cluster.jpg')
+        plot_private_dendrogram(self.D, 'private_dendrogram')
+        print('setting F and node_edge pairs...')
         # set up F: calculate probability
         for node1 in self.F.nodes():
             for node2 in self.F.nodes():
@@ -135,13 +156,14 @@ class GraphClusterWorker():
                     for neighbour in self.G.neighbours(node):
                         if neighbour in self.D[self.top[j]][3]+self.D[self.top[j]][4]:
                             self.edge_node[(self.top[i], self.top[j])].append((node, neighbour))
-        # plot and save the dendrogram
-        pos_x = nx.get_node_attributes(self.G, 'pos_x')
-        pos_y = nx.get_node_attributes(self.G, 'pos_y')
-        pos = {u: (pos_x[u], pos_y[u]) for u in self.G.nodes()}
-        plot_best_clusterings(self.G, self.D, 4, pos)
 
     def runSample(self):
+        # calculate sensitivity
+        self.sensitivity_cluster = 2 / self.args.min_cluster_size
+        if self.args.utility_sample == 'ave_pro':
+            self.sensitivity_sample = 2/self.E
+        elif self.args.utility_sample == 'log likelihood':
+            self.sensitivity_sample = 2*math.log(self.n) - math.log(4) + 1
         # set two threshold parameters to manually control convergence
         thresh_eq = np.max(self.args.eq, 1000) if self.args.eq else 1000
         thresh_stop = np.max(self.args.stop, 3000) if self.args.stop else 3000
@@ -157,6 +179,7 @@ class GraphClusterWorker():
 
         convergence = 0
         t = 0
+        print('Getting initial score...')
         t0 = time.time()
         ## get initial score
         if self.args.utility_sample == 'ave_pro':
@@ -175,7 +198,7 @@ class GraphClusterWorker():
                     self.score += -(len(self.D[u][3])+len(self.D[u][4]) )* (len(self.D[v][3]+len(self.D[v][4]))) * (
                                 self.F[u][v]['pro'] * math.log(self.F[u][v]['pro'])
                                 + (1 - self.F[u][v]['pro']) * math.log(1 - self.F[u][v]['pro']))
-
+        print('Start samping...')
         while convergence == 0:
             oldMeanL = newMeanL
             newMeanL = 0

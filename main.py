@@ -20,10 +20,8 @@ from utils import init_logger
 def get_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('--algorithm', type=str, default='non_private',help='cluster, HRG, graph_cluster')
-    parser.add_argument('--eq', type=int, default=2000,help='least iteration for MCMC to get equilibrium')
-    parser.add_argument('--stop', type=int, default=4000,help='maximum iteration for MCMC to get equilibrium')
 
-    parser.add_argument('--no-cuda', action='store_true', default=False,
+    parser.add_argument('--no-cuda', action='store_true', default=True,
                         help='Disables CUDA training.')
     parser.add_argument('--fastmode', action='store_true', default=False,
                         help='Validate during training pass.')
@@ -53,7 +51,7 @@ def get_arguments():
     parser.add_argument('--delta', type=float, default=1e-5)
     parser.add_argument('--r', type=int, default=1,
                         help='parameter for JL')
-    parser.add_argument('--train-ratio', type=float, default=0.5)
+    parser.add_argument('--train_ratio', type=float, default=0.5)
     parser.add_argument('--stop-num', type=int, default=50)
     parser.add_argument('--n-clusters', type=int, default=10)
     parser.add_argument('--break-ratio', type=float, default=1)
@@ -72,13 +70,14 @@ def get_arguments():
     parser.set_defaults(assign_seed=42)
 
     ########### parameters for graph clustering ############
+    parser.add_argument('--eq', type=int, default=100, help='least iteration for MCMC to get equilibrium')
+    parser.add_argument('--stop', type=int, default=4000, help='maximum iteration for MCMC to get equilibrium')
     parser.add_argument('--cluster_method', type=str, default='NodePairSample', help='NodePairSample, GANC')
-    parser.add_argument('--utility_cluster', type=str, default='curvature', help='curvature')
+    parser.add_argument('--utility_cluster', type=str, default='curvature', help='curvature, resolution, distance')
     parser.add_argument('--utility_sample',type=str, default='ave_pro', choices=['log likelihood', 'ave_pro'])
     parser.add_argument('--min_cluster_size', type=int, default=1)
-    parser.add_argument('--MCMC_utility', type=str, default='multi_likelihood', help='multi_likelihood, GANC')
-    parser.add_argument('--non_private', default=True)
-    parser.add_argument('--num_cluster', type=int, default=None)
+    parser.add_argument('--non_private', default=False)
+    parser.add_argument('--num_cluster', type=int, default=1)
     parser.add_argument('--epsilon1', type=float, default=0.2)
     parser.add_argument('--epsilon2', type=float, default=0.5)
     parser.add_argument('--epsilon3', type=float, default=0.5)
@@ -150,7 +149,7 @@ def main():
             trainer.test(args.eval_degree)
 
         else:
-            cur_time = datetime.datetime.now().strftime("%m-%d-%H:%M:%S.%f")[:-3]
+            cur_time = datetime.datetime.now().strftime('%m%d-%H%M%S')
 
             subdir = 'HRG_eps-{}_del-{}_{}'.format(args.epsilon, args.delta, cur_time)
 
@@ -173,7 +172,7 @@ def main():
             trainer.test(args.eval_degree)
 
         else:
-            cur_time = datetime.datetime.now().strftime("%m-%d-%H:%M:%S.%f")[:-3]
+            cur_time = datetime.datetime.now().strftime('%m%d-%H%M%S')
 
             subdir = 'GraphSample_eps-{}_del-{}_{}'.format(args.epsilon, args.delta, cur_time)
 
