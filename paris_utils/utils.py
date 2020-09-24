@@ -5,7 +5,7 @@
 #    Bertrand Charpentier <bertrand.charpentier@live.fr>
 #    All rights reserved.
 #    BSD license.
-
+import time
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -48,25 +48,18 @@ def plot_best_clusterings(G, D, k, pos, width = 16, height = 8):
 def plot_k_clusterings(G, D, top, pos, path, width = 16, height = 8):
     plt.rcParams.update({'font.size': 24})
     plt.figure(figsize=( width, height))
-    print(len(D))
-    print(len(D[0]))
-    print(top)
-    try:
-        length = [D[c][8] for c in top]
-    except IndexError:
-        for t in top:
-            if len(D[t]) < 9:
-                print(t, D[t])
-
+    length = [D[c][8] for c in top]
     index = np.argsort(-np.array(length))
     colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', '0.5', '0.3', '0.8', '0.6', '0.2', '0.7', '0.1', '0.9']
     plt.axis('off')
     for l in range(min(len(top),len(colors))):
-        nodelist = [D[i][3]+D[i][4] for i in top[index[l]]]
-        draw_nodes = nx.draw_networkx_nodes(G, pos, node_size=50, nodelist = nodelist,node_color=colors[l])
+        nodelist = [i for i in D[top[index[l]]][3]+D[top[index[l]]][4]]
+        draw_nodes = nx.draw_networkx_nodes(G, pos, node_size=30, nodelist = nodelist,node_color=colors[l])
         draw_nodes.set_edgecolor('k')
     plt.show()
     plt.savefig(path)
+ #   time.sleep(10)
+    plt.close()
 
 # Plot dendrogram
 def plot_dendrogram(D, logscale = True):
@@ -84,11 +77,11 @@ def plot_dendrogram(D, logscale = True):
 def plot_private_dendrogram(D, path, logscale = True):
     plt.figure(figsize=(25, 10))
     Dlog = D.copy()
-    Dlog = np.asarray([node[0,1,7,8] for node in Dlog])
+    Dlog = np.asarray([[Dlog[i][0], Dlog[i][1], Dlog[i][7], Dlog[i][8]] for i in range(len(Dlog)) if Dlog[i][0] is not None])
     Dlog = reorder_dendrogram(Dlog)
     if logscale:
         Dlog[:,2] = np.log(Dlog[:,2])
-        Dlog[1:,2] =  Dlog[1:,2] - Dlog[1,2]
+        Dlog[1:,2] = Dlog[1:,2] - Dlog[1,2]
         Dlog[0,2] = 0
     dendrogram(Dlog, leaf_rotation=90.)
     plt.axis('off')
@@ -277,4 +270,4 @@ def reorder_dendrogram(D):
     index = np.lexsort(order)
     nindex = {i:i for i in range(n)}
     nindex.update({n + index[t]:n + t for t in range(n - 1)})
-    return np.array([[nindex[int(D[t][0])],nindex[int(D[t][1])],D[t][2],D[t][3]] for t in range(n - 1)])[index,:]
+    return np.array([[D[t][0],D[t][1],D[t][2],D[t][3]] for t in range(n - 1)])[index,:]

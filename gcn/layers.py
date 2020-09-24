@@ -53,6 +53,8 @@ class ProjectionGraphConvolution(Module):
             # self.mask = self.mask.cuda()
             self.projection = projection.cuda()
         # self.projection = Parameter(projection)
+        else:
+            self.projection = projection
 
         self.weight = Parameter(torch.FloatTensor(in_features, out_features))
         if bias:

@@ -162,15 +162,16 @@ def private_paris(G, copy_graph = True, numofcluster = 1):
 
     # dendrogram as list of merges, initialize with leaf nodes of the dendrogram
     #left , right, probability, left, right children, node number, parent, distance, size
-    D = {u: [None, None, None, [], [], None, None, None, None] for u in range(n)}
+    D = {u: [None, None, None, [], [], u, None, None, None] for u in range(n)}
 
     # scores of each cluster level
-    if numofcluster is None:
+    if numofcluster == 1:
         scores = {i+1: 0 for i in range(n)}
 
     # cluster index
     u = n
-    while n > numofcluster-1:
+    while (n > numofcluster and len(cc) == 0) or n > numofcluster - 1:  # when there is at least one connected
+        # component, the times of merge should add one
         # nearest-neighbor chain, agglomerate two nodes if they are mutual nearest
         chain = [list(F.nodes())[0]]  # the first node
         while chain != []:
@@ -189,7 +190,7 @@ def private_paris(G, copy_graph = True, numofcluster = 1):
             d = dmin
             if chain != []:
                 c = chain.pop()
-                if b == c:
+                if b == c:  # merge a,b
                     # calculate the probability
                     p = F[a][b]['weight'] / s[a]*s[b]
                     # record the nodes under this merge
@@ -203,8 +204,8 @@ def private_paris(G, copy_graph = True, numofcluster = 1):
                         right = D[b][3] + D[b][4]
                     # merge a,b
                     D[u] = [a, b, p, left, right, u, None, d, s[a]+s[b]]
-                    D[a][6] = [u,0]
-                    D[b][6] = [u,1]
+                    D[a][6] = u
+                    D[b][6] = u
                     # renew top nodes
                     top.remove(a)
                     top.remove(b)
@@ -230,33 +231,45 @@ def private_paris(G, copy_graph = True, numofcluster = 1):
                     ss[u] = s[u]
                     # change cluster index
                     u += 1
+                    if not (n > numofcluster and len(cc) == 0) or n > numofcluster - 1:
+                        break
                 else:
                     chain.append(c)
                     chain.append(a)
                     chain.append(b)
-            elif b >= 0:
+            elif b >= 0:  # the chain is empty, and a has neighbour
                 chain.append(a)
                 chain.append(b)
             else: # a is a connected component
                 # remove the connected component
                 cc.append((a, s[a]))
                 F.remove_node(a)
+                top.remove(a)
                 w.pop(a)
                 s.pop(a)
                 n -= 1
-
-    # add connected components to the dendrogram
-    a, s = cc.pop()
-    for b, t in cc:
-        s += t
-        D[a] = [a, b, float("inf"), s]
-        a = u
-        u += 1
-
-    if numofcluster is None:
+                if not (n > numofcluster and len(cc) == 0) or n > numofcluster - 1:
+                    break
+    if not len(cc) == 0:
+        # add connected components to the dendrogram, all the connected components are combined to one cluster
+        a, s = cc.pop()
+        if len(cc) == 0:
+            top.append(a)
+        else:
+            for b, t in cc:
+                s += t
+                D[u] = [a, b, 0, D[a][3]+D[a][4], D[b][3]+D[b][4], u, None, float("inf"), s]
+                ss[u] = s
+                D[a][6] = u
+                D[b][6] = u
+                a = u
+                u += 1
+            top.append(a)
+        F.add_node(a)
+    if numofcluster == 1:
         return scores
     else:
-        return F, ss, top, D
+        return [F, ss, top, D]
 
 def reorder_dendrogram(D):
     n = np.shape(D)[0] + 1

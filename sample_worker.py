@@ -117,19 +117,20 @@ class GraphClusterWorker():
         else:
             if not self.args.num_cluster == 1:
                 # the graph of top nodes, the size of each node in dendrogram, the top nodes, the dendrogram
-                self.F, self.size, self.top, self.D = private_paris(self.G, self.args.num_cluster)
+                self.F, self.size, self.top, self.D = private_paris(self.G, True, self.args.num_cluster)
             else:
                 scores = private_paris(self.G)
                 num_cluster = np.argmax(np.asarray(scores)) + 1
-                self.F, self.size, self.top, self.D = private_paris(self.G, num_cluster)
+                self.F, self.size, self.top, self.D = private_paris(self.G, True, num_cluster)
         time2 = timeit.timeit()
         print('clustering finished, time cost:', time2 - time1)
         self.numofcluster = 2*self.n - len(self.D)
         # plot and save the dendrogram
         print('plotting clusterings and dendrogram...')
-        pos = nx.spring_layout(self.G)
-        plot_k_clusterings(self.G, self.D, self.top, pos, 'private_cluster.jpg')
-        plot_private_dendrogram(self.D, 'private_dendrogram')
+#        pos = nx.spring_layout(self.G)
+#        plot_k_clusterings(self.G, self.D, self.top, pos, 'private_cluster.jpg')
+        time3 = timeit.timeit()
+#        plot_private_dendrogram(self.D, 'private_dendrogram')
         print('setting F and node_edge pairs...')
         # set up F: calculate probability
         for node1 in self.F.nodes():
@@ -137,25 +138,28 @@ class GraphClusterWorker():
                 if not self.F.has_edge(node1, node2):
                     self.F.add_edge(node1, node2)
                     self.F[node1][node2]['pro'] = 0
-                elif 'weight' not in self.F[node1][node2]:
+                    self.F[node1][node2]['weight'] = 0
+                elif 'pro' not in self.F[node1][node2]:
                     self.F[node1][node2]['pro'] = self.F[node1][node2]['weight'] / (self.size[node1]*self.size[node2])
         # build node_edge pairs, that is related every edge of the graph to one node in the dendrogram,
         # or related to a pair of two top nodes. For each node in the dendrogram, see if the neighbour of each left children
         # is a node in the right children O(N*N)
-        self.edge_node = {r[5]: [] for r in self.D}
-        for node in self.D:
+        self.edge_node = {self.D[i][5]: [] for i in range(len(self.D))}
+        for i in range(len(self.D)):
+            node = self.D[i]
             for node1 in node[3]:
-                for neighbour in self.G.neighbours(node1):
+                for neighbour in self.G.neighbors(node1):
                     if neighbour in node[4]:
-                        self.edge_node[node].append((node1, neighbour))
+                        self.edge_node[node[5]].append((node1, neighbour))
         # add edges between clusters
         for i in range(self.numofcluster):
             for j in range(i+1, self.numofcluster):
                 self.edge_node[(self.top[i], self.top[j])] = []
                 for node in self.D[self.top[i]][3]+self.D[self.top[i]][4]:
-                    for neighbour in self.G.neighbours(node):
+                    for neighbour in self.G.neighbors(node):
                         if neighbour in self.D[self.top[j]][3]+self.D[self.top[j]][4]:
                             self.edge_node[(self.top[i], self.top[j])].append((node, neighbour))
+        print('F and node_edge pairs set up finish, time cost:', timeit.timeit() - time3)
 
     def runSample(self):
         # calculate sensitivity
@@ -165,13 +169,13 @@ class GraphClusterWorker():
         elif self.args.utility_sample == 'log likelihood':
             self.sensitivity_sample = 2*math.log(self.n) - math.log(4) + 1
         # set two threshold parameters to manually control convergence
-        thresh_eq = np.max(self.args.eq, 1000) if self.args.eq else 1000
-        thresh_stop = np.max(self.args.stop, 3000) if self.args.stop else 3000
+        thresh_eq = np.max((self.args.eq, 100)) if self.args.eq else 100
+        thresh_stop = np.max((self.args.stop, 3000)) if self.args.stop else 3000
         # parameters
         newMeanL = -1e49
         interval = 65536
-        max_len = np.max(1e8, thresh_eq * self.n)
-        trace = np.zeros(max_len)
+        max_len = np.max((1e8, thresh_eq * self.n))
+        trace = np.zeros(int(max_len))
         self.len = 0
         self.check = np.zeros(10000)
         check_num = 0
@@ -184,14 +188,18 @@ class GraphClusterWorker():
         ## get initial score
         if self.args.utility_sample == 'ave_pro':
             numerator = 0
-            for r in self.D:
-                numerator += (r[2] * self.D[r][3] * self.D[r][4]) ** 2 / (self.size[r[0]] * self.size[r[1]])
+            for i in range(len(self.D)):
+                r = self.D[i]
+                if r[5] >= self.n:
+                    numerator += (r[2] * len(r[3]) * len(r[4])) ** 2 / (self.size[r[0]] * self.size[r[1]])
             for (u,v) in self.F.edges():
                 numerator += (self.F[u][v]['pro']*self.size[u]*self.size[v]) ** 2 / (self.size[u]*self.size[v])
             self.score = numerator / self.E
         elif self.args.utility_sample == 'log likelihood':
-            for r in self.D:
-                self.score += -len(r[3]) * len(r[4]) * (r[2] * math.log(r[2]) + (1 - r[2]) * math.log(1 - r[2]))
+            for i in range(len(self.D)):
+                r = self.D[i]
+                if r[5] >= self.n:
+                    self.score += -len(r[3]) * len(r[4]) * (r[2] * math.log(r[2]) + (1 - r[2]) * math.log(1 - r[2]))
                 # add top nodes log likelihoods
             for (u, v) in self.F.edges():
                 if not self.F[u][v]['pro'] == 0:
@@ -209,7 +217,7 @@ class GraphClusterWorker():
                 while nodes[0] in self.D[nodes[1]][3] or nodes[0] in self.D[nodes[1]][4] or \
                     nodes[1] in self.D[nodes[0]][3] or nodes[1] in self.D[nodes[0]][3]:
                     nodes = random.sample(range(0, 2 * self.n - self.numofcluster), 2)
-
+ #               print(self.score)
                 self.exchange(nodes)
                 newMeanL += self.score
 
@@ -218,8 +226,8 @@ class GraphClusterWorker():
                     self.len = self.len + 1
                 t = t + 1
 
-                if t % 1000000 == 0:
-                    print('1e6 MCMC moves take {}s'.format(time.time() - t0))
+                if t % 1000 == 0:
+                    print('1e3 MCMC moves take {}s'.format(time.time() - t0))
                     t0 = time.time()
 
             self.check[check_num] = np.abs(newMeanL - oldMeanL) / interval
@@ -237,6 +245,7 @@ class GraphClusterWorker():
         :param nodes: nodes to be changed
         :return:
         """
+
         if nodes[0] in self.top and nodes[1] in self.top:
             # top nodes change will not affect the utility function
             return
@@ -351,6 +360,7 @@ class GraphClusterWorker():
             D_copy = self.D
             top_copy = self.top
             F_copy = self.F
+            self.edge_node_copy = self.edge_node
             ## renew the dendrogram
             # find all the parents of node[1] and node[2]
             parents1 = []
@@ -383,9 +393,13 @@ class GraphClusterWorker():
                 else:
                     left_right = 4
 
-                remove = D_copy[nodes[0]][3] + D_copy[nodes[0]][4].append(nodes[0])
+                remove = D_copy[nodes[0]][3] + D_copy[nodes[0]][4]
+                remove.append(nodes[0])
                 D_copy[p][left_right] = [e for e in D_copy[p][left_right] if e not in remove]
-                D_copy[p][left_right] += D_copy[nodes[1]][3] + D_copy[nodes[1]][4].append(nodes[1])
+
+                add = D_copy[nodes[1]][3] + D_copy[nodes[1]][4]
+                add.append(nodes[1])
+                D_copy[p][left_right] += add
 
             for p in parents2:
                 if nodes[1] in self.D[p][3]:
@@ -393,19 +407,23 @@ class GraphClusterWorker():
                 else:
                     left_right = 4
 
-                remove = D_copy[nodes[1]][3] + D_copy[nodes[1]][4].append(nodes[1])
+                remove = D_copy[nodes[1]][3] + D_copy[nodes[1]][4]
+                remove.append(nodes[1])
                 D_copy[p][left_right] = [e for e in D_copy[p][left_right] if e not in remove]
-                D_copy[p][left_right] += D_copy[nodes[0]][3] + D_copy[nodes[0]][4].append(nodes[0])
+
+                add = D_copy[nodes[0]][3] + D_copy[nodes[0]][4]
+                add.append(nodes[0])
+                D_copy[p][left_right] += add
             # renew the probabilities of nodes
             for p in parents1:
                 # find the key of edge_node from which the new edges come from
                 if not top1 == top2:
-                    new_key = (top1, top2)
+                    new_key = (np.min((top1, top2)), np.max((top1, top2)))
                 else:
                     pofp = D_copy[p][6]
                     while not pofp is None:
                         if pofp in parents1:
-                           new_key = (self.D[pofp][3], self.D[pofp][4])
+                           new_key = pofp
                            break
                         pofp = self.D[pofp][6]
                 try:
@@ -416,12 +434,12 @@ class GraphClusterWorker():
             for p in parents2:
                 # find the key of edge_node from which the new edges come from
                 if not top1 == top2:
-                    new_key = (top1, top2)
+                    new_key = (np.min((top1, top2)), np.max((top1, top2)))
                 else:
                     pofp = D_copy[p][6]
                     while not pofp is None:
                         if pofp in parents2:
-                            new_key = (self.D[pofp][3], self.D[pofp][4])
+                            new_key = pofp
                             break
                         pofp = self.D[pofp][6]
                 try:
@@ -506,12 +524,14 @@ class GraphClusterWorker():
                                         1 - self.F[node][top2]['pro']) *
                              math.log(1 - self.F[node][top2]['pro']))
             # probability to exchange these two nodes
+ #           print(after_score)
             prob = math.exp(self.args.epsilon2 * (after_score - self.score) / self.sensitivity_sample)
             if random.uniform(0, 1) < prob:
                 self.D = D_copy
                 self.F = F_copy
                 self.top = top_copy
                 self.score = after_score
+                self.edge_node = self.edge_node_copy
 
     def calc_prob(self, D, node, child_remove, child_add, new_key):
         """
@@ -519,7 +539,7 @@ class GraphClusterWorker():
         :param node: node to be calculated
         :param child_remove: child code removed from the node
         :param child_add: child code added to the code
-        :param new_index: the index of where the new edge com from, in (node1, node2) form
+        :param new_index: the index of where the new edge come from, in (node1, node2) form
         :return: probability
         """
         total = len(D[node][3])*len(D[node][4])
@@ -531,16 +551,21 @@ class GraphClusterWorker():
             left_right = 3
         # delete edge from edge_node
         to_remove = []
-        for (u,v) in self.edge_node[(D[node][0], D[node][1])]: # O(logN)
+        for (u,v) in self.edge_node_copy[node]: # O(logN)
             if (u in self.D[child_remove][3]+self.D[child_remove][4] and v in self.D[node][left_right]) or \
                  (v in self.D[child_remove][3]+self.D[child_remove][4] and u in self.D[node][left_right]):
                 to_remove.append((u,v))
-        self.edge_node[(D[node][0], D[node][1])] = [edge for edge in self.edge_node[(D[node][0], D[node][1])] if edge not in to_remove]
+        self.edge_node_copy[node] = [edge for edge in self.edge_node_copy[node] if edge not in to_remove]
         # add edges brought from new node
-        for (u,v) in self.edge_node[new_key]:
-            if (u in child_add and v in self.D[node][left_right]) or (v in child_add and u in self.D[node][left_right]):
-                self.edge_node[(D[node][0], D[node][1])].append((u,v))
-        num_edge = len(self.edge_node[(D[node][0], D[node][1])])
+        try:
+            for (u,v) in self.edge_node_copy[new_key]:
+                if (u in self.D[child_add][3]+self.D[child_add][4] and v in self.D[node][left_right]) or \
+                    (v in self.D[child_add][3]+self.D[child_add][4] and u in self.D[node][left_right]):
+                    self.edge_node_copy[node].append((u,v))
+        except MemoryError:
+            print(len(self.edge_node_copy[node]))
+            exit(1)
+        num_edge = len(self.edge_node_copy[node])
         return num_edge/total
 
     def calc_cluster_prob(self, D, nodes, child_remove, child_add, origin_top):
@@ -557,17 +582,22 @@ class GraphClusterWorker():
         num_edge = 0
         # delete edges
         to_remove = []
-        for (u,v) in self.edge_node[(nodes[0], nodes[1])]:
+        key1 = np.min((nodes[0], nodes[1])), np.max((nodes[0], nodes[1]))
+        for (u,v) in self.edge_node_copy[key1]:
             if (u in self.D[child_remove][3]+self.D[child_remove][4] and v in children2) or \
                     (v in self.D[child_remove][3]+self.D[child_remove][4] and u in children2):
                 to_remove.append((u,v))
-        self.edge_node[(nodes[0], nodes[1])] = [edge for edge in self.edge_node[(nodes[1], nodes[2])] if edge not in to_remove]
+        self.edge_node_copy[key1] = [edge for edge in self.edge_node_copy[key1] if edge not in to_remove]
         # add edges
-        for (u,v) in self.edge_node[(nodes[0], origin_top)]:
+        if nodes[0] == origin_top:
+            key = nodes[0]
+        else:
+            key = (np.min((nodes[0], origin_top)),np.max((nodes[0], origin_top)) )
+        for (u,v) in self.edge_node_copy[key]:
             if (u in D[child_add][3]+D[child_add][4] and v in children2) or \
                     (v in D[child_add][3]+D[child_add][4] and u in children2):
-                self.edge_node[(nodes[0], nodes[1])].append((u,v))
-        num_edge = len(self.edge_node[(nodes[0], nodes[1])])
+                self.edge_node_copy[key1].append((u,v))
+        num_edge = len(self.edge_node_copy[key1])
         return num_edge/total
 
     def judge_converge(self):
