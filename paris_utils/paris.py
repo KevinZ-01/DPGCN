@@ -192,7 +192,7 @@ def private_paris(G, copy_graph = True, numofcluster = 1):
                 c = chain.pop()
                 if b == c:  # merge a,b
                     # calculate the probability
-                    p = F[a][b]['weight'] / s[a]*s[b]
+                    p = F[a][b]['weight'] / (s[a]*s[b])
                     # record the nodes under this merge
                     if a < N:
                         left = [a]
