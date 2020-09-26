@@ -260,6 +260,9 @@ class GraphClusterWorker():
             # top nodes change will not affect the utility function
             return
         elif nodes[0] in self.top or nodes[1] in self.top:  # one node is top node
+            new_record = {}  # a dict that record the renewed probability and the renewed left and right length
+            # of relative parent nodes
+            local_edge_node = {}  # a dict that record the renewed edge_node pairs
             if nodes[0] in self.top:
                 a = 1
                 b = 0
@@ -267,40 +270,35 @@ class GraphClusterWorker():
                 a = 0
                 b = 1
             D_copy = self.D
-            top_copy = self.top
             F_copy = self.F
-            # renew the top list O(n)
-            top_copy.remove(nodes[b])
-            top_copy.append(nodes[a])
             ## renew the dendrogram
             #find all the parents of nodes[a], O(logN)
             parents = []
             this_top = 0
             p = self.D[nodes[a]][6]
-            if not p == None:
-                if self.D[p][0] == nodes[a]:
-                    D_copy[p][0] = nodes[b]
-                elif self.D[p][1] == nodes[a]:
-                    D_copy[p][1] = nodes[b]
-
             while not p==None:
                 parents.append(p)
                 this_top = p
                 p = self.D[p][6]
+            ############################################################
             # renew left and right child nodes, O(logN*logN)
+            remove = self.D[nodes[0]][3] + self.D[nodes[0]][4]
+            remove.append(nodes[0])
+            add = self.D[nodes[1]][3] + self.D[nodes[1]][4]
+            add.append(nodes[1])
+            child = nodes[0]
             for p in parents:
-                if nodes[a] in self.D[p][3]:
-                    left_right = 3
+                if child == self.D[p][0]:
+                    new_record[p] = [0,len(self.D[p][3])-len(remove)+len(add), len(self.D[p][4])]
                 else:
-                    left_right = 4
-                remove = D_copy[nodes[a]][3] + D_copy[nodes[a]][4].append(nodes[a])
-                D_copy[p][left_right] = [e for e in D_copy[p][left_right] if e not in remove] # O(logN)
-                D_copy[p][left_right] += D_copy[nodes[b]][3] + D_copy[nodes[b]][4].append(nodes[b])
-             # renew the probabilities of nodes O(logN*logN)
+                    new_record[p] = [0, len(self.D[p][3]), len(self.D[p][4]) - len(remove)+len(add)]
+            # renew the probabilities of nodes O(logN*logN)
+            new_key = (np.min((this_top, nodes[b])), np.max((this_top, nodes[b])))
             for p in parents:
-                new_index = (this_top, nodes[b])
-                pro = self.calc_prob(D_copy, p, nodes[b], nodes[a], new_index)
+                pro, new_edge_node = self.calc_prob(new_record[p], p, nodes[b], nodes[a], new_key)
                 D_copy[p][2] = pro
+                local_edge_node[p] = new_edge_node
+
             #renew the probabilities between clusters O(N)
             F_copy.remove_node(nodes[b])
             F_copy.add_node(nodes[a])
@@ -362,13 +360,29 @@ class GraphClusterWorker():
             # probability to exchange these two nodes O(1)
             prob = math.exp(self.args.epsilon2*(after_score-self.score)/self.sensitivity_sample)
             if random.uniform(0, 1) < prob:
-                self.D = D_copy
-                self.F = F_copy
-                self.top = top_copy
                 self.score = after_score
-        else: # both the nodes are not top nodes
-            new_record = {} # a dict that record the renewed probability and the renewd left and right length
+                # renew the left/right direct child of the parent of the non-top node
+                p = self.D[nodes[a]][6]
+                if not p == None:
+                    if self.D[p][0] == nodes[a]:
+                        self.D[p][0] = nodes[b]
+                    elif self.D[p][1] == nodes[a]:
+                        self.D[p][1] = nodes[b]
+                # renew the fhildren of all the relative nodes
+                for p in parents:
+                    if nodes[a] in self.D[p][3]:
+                        left_right = 3
+                    else:
+                        left_right = 4
+                    remove = D_copy[nodes[a]][3] + D_copy[nodes[a]][4].append(nodes[a])
+                    D_copy[p][left_right] = [e for e in D_copy[p][left_right] if e not in remove]  # O(logN)
+                    D_copy[p][left_right] += D_copy[nodes[b]][3] + D_copy[nodes[b]][4].append(nodes[b])
+                #################################################################################
+                # renew the probabilities of nodes
+        else:  # both the nodes are not top nodes
+            new_record = {}  # a dict that record the renewed probability and the renewd left and right length
             # of relative parent nodes
+            local_edge_node = {} # a dict record the renewed edge_node pairs
             ## renew the dendrogram
             # find all the parents of node[1] and node[2]
             parents1 = []
@@ -378,7 +392,6 @@ class GraphClusterWorker():
                 parents1.append(p)
                 top1 = p
                 p = self.D[p][6]
-
             p = self.D[nodes[1]][6]
             while not p is None:
                 parents2.append(p)
@@ -392,100 +405,104 @@ class GraphClusterWorker():
             add.append(nodes[1])
             child = nodes[0]
             for p in parents1:
-                if nodes[0] in self.D[p][3]:
-                    left_right = 3
-                else:
-                    left_right = 4
                 if child == self.D[p][0]:
-                    new_record[p] = [0,len(self.D[p][3])-len(remove)+len(add), len(self.D[p][4])]
+                    new_record[p] = [0, len(self.D[p][3]) - len(remove) + len(add), len(self.D[p][4])]
                 else:
-                    new_record[p] = [0, len(self.D[p][3]), len(self.D[p][4]) - len(remove)+len(add)]
+                    new_record[p] = [0, len(self.D[p][3]), len(self.D[p][4]) - len(remove) + len(add)]
 
             remove = self.D[nodes[1]][3] + self.D[nodes[1]][4]
             remove.append(nodes[1])
             add = self.D[nodes[0]][3] + self.D[nodes[0]][4]
             add.append(nodes[0])
+            child = nodes[1]
             for p in parents2:
-                if nodes[1] in self.D[p][3]:
-                    left_right = 3
-                else:
-                    left_right = 4
                 if child == self.D[p][0]:
-                    new_record[p] = [0,len(self.D[p][3])-len(remove)+len(add), len(self.D[p][4])]
+                    new_record[p] = [0, len(self.D[p][3]) - len(remove) + len(add), len(self.D[p][4])]
                 else:
-                    new_record[p] = [0, len(self.D[p][3]), len(self.D[p][4]) - len(remove)+len(add)]
+                    new_record[p] = [0, len(self.D[p][3]), len(self.D[p][4]) - len(remove) + len(add)]
             ############################################################################
             # renew the probabilities of nodes
             new_key = (np.min((top1, top2)), np.max((top1, top2)))
             for p in parents1:
                 # find the key of edge_node from which the new edges come from
-                pro = self.calc_prob(new_record[p], p, nodes[0], nodes[1], new_key)
+                pro, new_edge_node = self.calc_prob(new_record[p], p, nodes[0], nodes[1], new_key)
+                local_edge_node[p] = new_edge_node
                 new_record[p][0] = pro
             for p in parents2:
                 # find the key of edge_node from which the new edges come from
-                pro = self.calc_prob(new_record[p], p, nodes[1], nodes[0], new_key)
+                pro, new_edge_node = self.calc_prob(new_record[p], p, nodes[1], nodes[0], new_key)
+                local_edge_node[p] = new_edge_node
                 new_record[p][0] = pro
             # renew the probabilities between clusters
             for node in self.F.nodes():
                 if not (node == top1 or node == top2):
-                    pro = self.calc_cluster_prob(new_record[top1], [node, top1], nodes[0], nodes[1], top2)
+                    key1 = (np.min((node, top1)), np.max((node, top1)))
+                    pro, new_edge_node = self.calc_cluster_prob(new_record[top1], [node, top1], nodes[0], nodes[1], top2)
+                    local_edge_node[key1] = new_edge_node
                     new_record[(node, top1)] = pro
+
+                    key1 = (np.min((node, top2)), np.max((node, top2)))
+                    pro, new_edge_node = self.calc_cluster_prob(new_record[top2], [node, top2], nodes[1], nodes[0], top1)
+                    local_edge_node[key1] = new_edge_node
+                    new_record[(node, top2)] = pro
             # renew the probability between top1 and top2
-            pro = self.calc_tops_pro(top1, top2, nodes[0], nodes[1], new_record[top1], new_record[top2])
+            pro, new_edge_node = self.calc_tops_pro(top1, top2, nodes[0], nodes[1], new_record[top1], new_record[top2])
+            local_edge_node[new_key] = new_edge_node
             new_record[(top1, top2)] = pro
             #####################################################################################
             # calculate the utility function
             if self.args.utility_sample == 'ave_pro':
-                for p in parents1+parents2:
+                for p in parents1 + parents2:
                     after_score = self.score - \
                                   (self.D[p][2] ** 2 * len(self.D[p][3]) * len(self.D[p][4]) +
                                    new_record[p][0] ** 2 * new_record[p][1] * new_record[p][2]) / self.E
 
                 for node in self.F.nodes():
                     if not (node == top1 or node == top2):
-                            after_score += new_record[(node, top1)][0] ** 2 * (
-                                        len(self.D[node][3]) + len(self.D[node][4])) * (
-                                                       new_record[(node, top1)][1] + new_record[(node, top1)][2]) - \
-                                           self.F[node][top1]['pro'] ** 2 * (
-                                                       len(self.D[node][3]) + len(self.D[node][4])) * (
-                                                       len(self.D[top1][3]) + len(self.D[top1][4]))
+                        after_score += new_record[(node, top1)][0] ** 2 * (
+                                len(self.D[node][3]) + len(self.D[node][4])) * (
+                                               new_record[(node, top1)][1] + new_record[(node, top1)][2]) - \
+                                       self.F[node][top1]['pro'] ** 2 * (
+                                               len(self.D[node][3]) + len(self.D[node][4])) * (
+                                               len(self.D[top1][3]) + len(self.D[top1][4]))
 
-                            after_score += new_record[(node, top2)][0] ** 2 * (
-                                        len(self.D[node][3]) + len(self.D[node][4])) * (
-                                                   new_record[(node, top2)][1] + new_record[(node, top1)][2]) - \
-                                           self.F[node][top2]['pro'] ** 2 * (
-                                                       len(self.D[node][3]) + len(self.D[node][4])) * (
-                                                   len(self.D[top2][3]) + len(self.D[top2][4]))
+                        after_score += new_record[(node, top2)][0] ** 2 * (
+                                len(self.D[node][3]) + len(self.D[node][4])) * (
+                                               new_record[(node, top2)][1] + new_record[(node, top1)][2]) - \
+                                       self.F[node][top2]['pro'] ** 2 * (
+                                               len(self.D[node][3]) + len(self.D[node][4])) * (
+                                               len(self.D[top2][3]) + len(self.D[top2][4]))
                 # calculate probability of (top1, top2)
                 after_score += new_record[(top1, top2)][0] ** 2 * \
-                        (new_record[top1][1] + new_record[top1][2]) * (
+                               (new_record[top1][1] + new_record[top1][2]) * (
                                        new_record[top2][1] + new_record[top2][2]) - \
                                self.F[top1][top2]['pro'] ** 2 * (
                                        len(self.D[top2][3]) + len(self.D[top2][4])) * (
                                        len(self.D[top1][3]) + len(self.D[top1][4]))
 
             elif self.args.utility_sample == 'log likelihood':
-                for p in parents1+parents2:
+                for p in parents1 + parents2:
                     after_score = self.score - \
                                   len(self.D[p][3]) * len(self.D[p][4]) * (
-                                              self.D[p][2] * math.log(self.D[p][2]) + (1 - self.D[p][2]) * math.log(
-                                          1 - self.D[p][2])) + \
+                                          self.D[p][2] * math.log(self.D[p][2]) + (1 - self.D[p][2]) * math.log(
+                                      1 - self.D[p][2])) + \
                                   new_record[p][1] * new_record[p][2] * (
-                                              new_record[p][0] * math.log(new_record[p][0]) + (1 - new_record[p][0]) * math.log(
-                                          1 - new_record[p][0]))
+                                          new_record[p][0] * math.log(new_record[p][0]) + (
+                                              1 - new_record[p][0]) * math.log(
+                                      1 - new_record[p][0]))
                 # calculate the between-cluster information entropy that has been changed
                 for node in self.F.nodes():
                     if not (node == top1 or node == top2):
                         after_score += \
                             (len(self.D[node][3]) + len(self.D[node][4])) * (
-                                        new_record[top1][1] + new_record[top1][2]) * \
+                                    new_record[top1][1] + new_record[top1][2]) * \
                             (new_record[(node, top1)][0] * math.log(new_record[(node, top1)][0]) + (
-                                        1 - new_record[(node, top1)][0]) * math.log(
+                                    1 - new_record[(node, top1)][0]) * math.log(
                                 1 - new_record[(node, top1)][0])) - \
                             (len(self.D[node][3]) + len(self.D[node][4])) * (
-                                        len(self.D[top1][3]) + len(self.D[top1][4])) * \
+                                    len(self.D[top1][3]) + len(self.D[top1][4])) * \
                             (self.F[node][top1]['pro'] * math.log(self.F[node][top1]['pro']) + (
-                                        1 - self.F[node][top1]['pro']) * math.log(
+                                    1 - self.F[node][top1]['pro']) * math.log(
                                 1 - self.F[node][top1]['pro']))
 
                         after_score += \
@@ -495,14 +512,14 @@ class GraphClusterWorker():
                                     1 - new_record[(node, top2)][0]) * math.log(
                                 1 - new_record[(node, top2)][0])) - \
                             (len(self.D[node][3]) + len(self.D[node][4])) * (
-                                        len(self.D[top2][3]) + len(self.D[top2][4])) * \
+                                    len(self.D[top2][3]) + len(self.D[top2][4])) * \
                             (self.F[node][top2]['pro'] * math.log(self.F[node][top2]['pro']) + (
-                                        1 - self.F[node][top2]['pro']) *
+                                    1 - self.F[node][top2]['pro']) *
                              math.log(1 - self.F[node][top2]['pro']))
                 # calculate probability of (top1, top2)
                 after_score += \
-                    (new_record[top1][1]+new_record[top1][2]) * (
-                            new_record[top2][1]+new_record[top2][2]) * \
+                    (new_record[top1][1] + new_record[top1][2]) * (
+                            new_record[top2][1] + new_record[top2][2]) * \
                     (new_record[(top1, top2)] * math.log(new_record[(top1, top2)]) + (
                             1 - new_record[(top1, top2)]) * math.log(
                         1 - new_record[(top1, top2)])) - \
@@ -512,10 +529,9 @@ class GraphClusterWorker():
                             1 - self.F[top1][top2]['pro']) * math.log(
                         1 - self.F[top1][top2]['pro']))
             # probability to exchange these two nodes
- #           print(after_score)
             prob = math.exp(self.args.epsilon2 * (after_score - self.score) / self.sensitivity_sample)
             if random.uniform(0, 1) < prob:
-                ## renew the dendrogram and F
+                ## renew the dendrogram and F, and edge_node pairs
                 self.score = after_score
                 # renew the left/right direct child
                 p = self.D[nodes[0]][6]
@@ -532,43 +548,48 @@ class GraphClusterWorker():
                         self.D[p][1] = nodes[0]
                 ##################################################################
                 # renew the children of all the parents of two nodes
+                remove = self.D[nodes[0]][3] + self.D[nodes[0]][4]
+                remove.append(nodes[0])
+                add = self.D[nodes[1]][3] + self.D[nodes[1]][4]
+                add.append(nodes[1])
                 for p in parents1:
                     if nodes[0] in self.D[p][3]:
                         left_right = 3
                     else:
                         left_right = 4
 
-                    remove = self.D[nodes[0]][3] + self.D[nodes[0]][4]
-                    remove.append(nodes[0])
                     self.D[p][left_right] = [e for e in self.D[p][left_right] if e not in remove]
-
-                    add = self.D[nodes[1]][3] + self.D[nodes[1]][4]
-                    add.append(nodes[1])
                     self.D[p][left_right] += add
 
+                remove = self.D[nodes[1]][3] + self.D[nodes[1]][4]
+                remove.append(nodes[1])
+                add = self.D[nodes[0]][3] + self.D[nodes[0]][4]
+                add.append(nodes[0])
                 for p in parents2:
                     if nodes[1] in self.D[p][3]:
                         left_right = 3
                     else:
                         left_right = 4
 
-                    remove = self.D[nodes[1]][3] + self.D[nodes[1]][4]
-                    remove.append(nodes[1])
                     self.D[p][left_right] = [e for e in self.D[p][left_right] if e not in remove]
-
-                    add = self.D[nodes[0]][3] + self.D[nodes[0]][4]
-                    add.append(nodes[0])
                     self.D[p][left_right] += add
                 ###################################################################
-                # renew the probability of nodes in dendrogram
-                for p in parents1+parents2:
+                # renew the probability of nodes in dendrogram, and the edge_node pairs
+                for p in parents1 + parents2:
                     self.D[p][2] = new_record[p][0]
+                    self.edge_node[p] = local_edge_node[p]
                 # renew the probability between clusters
                 for node in self.F.nodes():
                     if not (node == top1 or node == top2):
+                        key1 = (np.min((node, top1)), np.max((node, top1)))
                         self.F[node][top1]['pro'] = new_record[(node, top1)]
+                        self.edge_node[key1] = local_edge_node[(node, top1)]
+
+                        key1 = (np.min((node, top2)), np.max((node, top2)))
                         self.F[node][top2]['pro'] = new_record[(node, top2)]
+                        self.edge_node[key1] = local_edge_node[(node, top2)]
                 self.F[top1][top2]['pro'] = new_record[(top1, top2)]
+                self.edge_node[new_key] = local_edge_node[(top1, top2)]
                 ####################################################################
 
     def calc_prob(self, new_len, node, child_remove, child_add, new_key):
@@ -580,7 +601,7 @@ class GraphClusterWorker():
         :param new_key: the index of where the new edge come from, in (node1, node2) form
         :return: probability
         """
-        total = new_len[1]*new_len[2]
+        total = new_len[1] * new_len[2]
         ## calculate edges
         if child_remove in self.D[node][3]:
             left_right = 4
@@ -588,48 +609,48 @@ class GraphClusterWorker():
             left_right = 3
         # delete edges from edge_node
         to_remove = []
-        for (u,v) in self.edge_node[node]: # O(logN)
-            if (u in self.D[child_remove][3]+self.D[child_remove][4] and v in self.D[node][left_right]) or \
-                 (v in self.D[child_remove][3]+self.D[child_remove][4] and u in self.D[node][left_right]):
-                to_remove.append((u,v))
-        self.edge_node[node] = [edge for edge in self.edge_node[node] if edge not in to_remove]
+        for (u, v) in self.edge_node[node]:  # O(logN)
+            if (u in self.D[child_remove][3] + self.D[child_remove][4] and v in self.D[node][left_right]) or \
+                    (v in self.D[child_remove][3] + self.D[child_remove][4] and u in self.D[node][left_right]):
+                to_remove.append((u, v))
+        edge_node = [edge for edge in self.edge_node[node] if edge not in to_remove]
         # add edges brought from new node
-        for (u,v) in self.edge_node[new_key]:
-            if (u in self.D[child_add][3]+self.D[child_add][4] and v in self.D[node][left_right]) or \
-                 (v in self.D[child_add][3]+self.D[child_add][4] and u in self.D[node][left_right]):
-                self.edge_node[node].append((u,v))
-        num_edge = len(self.edge_node[node])
-        return num_edge/total
+        for (u, v) in self.edge_node[new_key]:
+            if (u in self.D[child_add][3] + self.D[child_add][4] and v in self.D[node][left_right]) or \
+                    (v in self.D[child_add][3] + self.D[child_add][4] and u in self.D[node][left_right]):
+                edge_node.append((u, v))
+        num_edge = len(edge_node)
+        return num_edge / total, edge_node
 
-    def calc_cluster_prob(self,new_len, nodes, child_remove, child_add, origin_top):
+    def calc_cluster_prob(self, new_len, nodes, child_remove, child_add, origin_top):
         """
         :param nodes: two top nodes, the last one is the one who changed
         :param child_remove: child that removed from the first cluster
         :param child_add: child that added to the first cluster
         :return: probability
         """
-        children1 = self.D[nodes[0]][3]+self.D[nodes[0]][4]
-        children2 = self.D[nodes[1]][3]+self.D[nodes[1]][4]
-        total = len(children1)*new_len
+        children1 = self.D[nodes[0]][3] + self.D[nodes[0]][4]
+        children2 = self.D[nodes[1]][3] + self.D[nodes[1]][4]
+        total = len(children1) * new_len
         # delete edges
         to_remove = []
         key1 = (np.min((nodes[0], nodes[1])), np.max((nodes[0], nodes[1])))
-        for (u,v) in self.edge_node[key1]:
-            if (u in self.D[child_remove][3]+self.D[child_remove][4] and v in children2) or \
-                    (v in self.D[child_remove][3]+self.D[child_remove][4] and u in children2):
-                to_remove.append((u,v))
-        self.edge_node[key1] = [edge for edge in self.edge_node[key1] if edge not in to_remove]
+        for (u, v) in self.edge_node[key1]:
+            if (u in self.D[child_remove][3] + self.D[child_remove][4] and v in children2) or \
+                    (v in self.D[child_remove][3] + self.D[child_remove][4] and u in children2):
+                to_remove.append((u, v))
+        edge_node = [edge for edge in self.edge_node[key1] if edge not in to_remove]
         # add edges
         if nodes[0] == origin_top:
             key = nodes[0]
         else:
-            key = (np.min((nodes[0], origin_top)),np.max((nodes[0], origin_top)))
-        for (u,v) in self.edge_node[key]:
-            if (u in self.D[child_add][3]+self.D[child_add][4] and v in children2) or \
-                    (v in self.D[child_add][3]+self.D[child_add][4] and u in children2):
-                self.edge_node[key1].append((u,v))
+            key = (np.min((nodes[0], origin_top)), np.max((nodes[0], origin_top)))
+        for (u, v) in self.edge_node[key]:
+            if (u in self.D[child_add][3] + self.D[child_add][4] and v in children2) or \
+                    (v in self.D[child_add][3] + self.D[child_add][4] and u in children2):
+                edge_node.append((u, v))
         num_edge = len(self.edge_node[key1])
-        return num_edge/total
+        return num_edge / total, edge_node
 
     def calc_tops_pro(self, top1, top2, node1, node2, new_rec_top1, new_rec_top2):
 
@@ -658,17 +679,18 @@ class GraphClusterWorker():
             self.calculateNoisyProb(top_node, epsilon)
 
     def calculateNoisyProb(self, node, epsilon):
-        lambda_b = 1/(epsilon*len(self.D[node][3])*len(self.D[node][4]))
-        lambda_c = 2/(epsilon*len(self.D[node][3]+self.D[node][4])*len(self.D[node][3]+self.D[node][4]-1))
+        lambda_b = 1 / (epsilon * len(self.D[node][3]) * len(self.D[node][4]))
+        lambda_c = 2 / (epsilon * len(self.D[node][3] + self.D[node][4]) * len(self.D[node][3] + self.D[node][4] - 1))
         if lambda_b > self.args.pi1 and lambda_c > self.args.pi2:
             edges_below = self.calculate_edge_below(node)
             noisy_prob = edges_below + np.random.laplace(scale=epsilon)
             noisy_prob = np.clip(noisy_prob, 0, 1)
-            for child in self.D[node][3]+self.D[node][4]:
+            for child in self.D[node][3] + self.D[node][4]:
                 if child >= self.n:
                     self.D[child][2] = noisy_prob
         else:
-            noisy_prob = self.D[node][2] + np.random.laplace(scale=epsilon)/(len(self.D[node][3])*len(self.D[node][4]))
+            noisy_prob = self.D[node][2] + np.random.laplace(scale=epsilon) / (
+                        len(self.D[node][3]) * len(self.D[node][4]))
             self.D[node][2] = np.clip(noisy_prob, 0, 1)
             self.calculateNoisyProb(self.D[node][0], epsilon)
             self.calculateNoisyProb(self.D[node][1], epsilon)
