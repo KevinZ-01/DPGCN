@@ -313,52 +313,61 @@ class GraphClusterWorker():
                     local_edge_node[key1] = new_edge_node
                     new_record[(node, this_top)] = pro
             # calculate the probabilities of (this_top, nodes[a])
-
+            total = len(self.D[nodes[a]][3]+self.D[nodes[a][4]]) * new_record[this_top][0]
+            new_edge_node = []
+            key = (np.min((this_top, nodes[b])), np.max((nodes[b], this_top)))
+            for (u, v) in self.edge_node[key]:
+                if (u in self.D[nodes[a]][3] + self.D[nodes[a]][4] and v in self.D[nodes[b]][3] + self.D[nodes[b]][4]) or \
+                        (v in self.D[nodes[a]][3] + self.D[nodes[a]][4] and u in self.D[nodes[b]][3] + self.D[nodes[b]][4]):
+                    new_edge_node.append((u, v))
+            for node in remove:
+                for neighbour in self.G.neighbors(node):
+                    if neighbour in self.D[nodes[a]][3]+self.D[nodes[a]][4]:
+                        new_edge_node.append((node, neighbour))
+            key = (np.min((this_top, nodes[a])), np.max((nodes[a], this_top)))
+            local_edge_node[key] = new_edge_node
+            num_edge = len(new_edge_node)
+            new_record[key] = num_edge/total
             #################################################################
             #calculate the utility function O(logN)
             if self.args.utility_sample == 'ave_pro':
                 for p in parents:
                     after_score = self.score - \
                                   (self.D[p][2] ** 2 * len(self.D[p][3])*len(self.D[p][4]) +
-                                   D_copy[p][2]** 2 * len(D_copy[p][3])*len(D_copy[p][4]))/self.E
+                                   new_record[p][0]** 2 * new_record[p][1]*new_record[p][2])/self.E
 
-                for node in F_copy.nodes():
-                    if not node == nodes[a]:
-                        try:
-                            after_score += F_copy[node][nodes[a]]['pro'] ** 2 * (len(D_copy[node][3]) + len(D_copy[node][4])) * (len(D_copy[nodes[a]][3]) + len(D_copy[nodes[a]][4])) - \
+                for node in self.F.nodes():
+                    if not (node == nodes[b] or node == this_top):
+                        after_score += new_record[(node, nodes[a])] ** 2 * (len(self.D[node][3]) + len(self.D[node][4])) * (new_record[nodes[a]][1] + new_record[nodes[a]][2]) - \
                                        self.F[node][nodes[b]]['pro'] ** 2 * (len(self.D[node][3])+len(self.D[node][4])) * (len(self.D[nodes[b]][3])+len(self.D[nodes[b]][4]))
-                        except NameError:
-                            print("ERROR: could not find parent of node to be changed!")
-                    if not node == this_top:
-                        after_score += F_copy[node][this_top]['pro'] ** 2 * (len(D_copy[node][3]) + len(D_copy[node][4])) * (
-                                                   len(D_copy[this_top][3]) + len(D_copy[this_top][4])) - \
-                                       self.F[node][this_top]['pro'] ** 2 * (len(self.D[node][3]) + len(self.D[node][4])) * (
-                                                   len(self.D[this_top][3]) + len(self.D[this_top][4]))
+
+                        after_score += new_record[(node, this_top)] ** 2 * (len(self.D[node][3]) + len(self.D[node][4])) * (new_record[this_top][1] + new_record[this_top][2]) - \
+                                       self.F[node][this_top]['pro'] ** 2 * (len(self.D[node][3]) + len(self.D[node][4])) * (len(self.D[this_top][3]) + len(self.D[this_top][4]))
+                # calculate the
 
             elif self.args.utility_sample == 'log likelihood':
                 for p in parents:
                     after_score = self.score + \
                                   len(self.D[p][3])*len(self.D[p][4])* (self.D[p][2] * math.log(self.D[p][2]) + (1 - self.D[p][2]) * math.log(1 - self.D[p][2])) - \
-                                  len(D_copy[p][3])*len(D_copy[p][4])* (D_copy[p][2] * math.log(D_copy[p][2]) + (1 - D_copy[p][2]) * math.log(1 - D_copy[p][2]))
+                                  len(new_record[p][2])*len(new_record[p][1])* (new_record[p][0] * math.log(new_record[p][0]) + (1 - new_record[p][0]) * math.log(1 - new_record[p][0]))
                 # calculate the between-cluster information entropy that has been changed
-                for node in F_copy.nodes():
-                    if not node == nodes[a]:
-                        try:
-                            after_score += \
-                                (len(D_copy[node][3])+len(D_copy[node][4]))*(len(D_copy[nodes[a]][3])+len(D_copy[nodes[a]][4]))*\
-                                (F_copy[node][nodes[1]]['pro'] * math.log(F_copy[node][nodes[a]]['pro']) + (1 - F_copy[node][nodes[a]]['pro']) * math.log(1 - F_copy[node][nodes[a]]['pro'])) - \
-                                (len(self.D[node][3])+len(self.D[node][4]))*(len(self.D[nodes[a]][3])+len(self.D[nodes[a]][4]))*\
-                                (self.F[node][nodes[b]]['pro'] * math.log(self.F[node][nodes[b]]['pro']) + (1 - self.F[node][nodes[b]]['pro']) * math.log(1 - self.F[node][nodes[b]]['pro']))
-                        except NameError:
-                            print("ERROR: could not find parent of the node to be changed")
-                    if not node == this_top:
+                for node in self.F.nodes():
+                    if not (node == nodes[a] or node == this_top):
                         after_score += \
-                            (len(D_copy[node][3]) + len(D_copy[node][4])) * (len(D_copy[this_top][3]) + len(D_copy[this_top][4])) * \
-                            (F_copy[node][this_top]['pro'] * math.log(F_copy[node][this_top]['pro']) + (1 - F_copy[node][this_top]['pro']) *
-                             math.log( 1 - F_copy[node][this_top]['pro'])) - \
+                            (len(self.D[node][3])+len(self.D[node][4]))*(new_record[nodes[a]][1]+new_record[nodes[a]][2])*\
+                            (new_record[(node, nodes[a])] * math.log(new_record[(node, nodes[a])]) + (1 - new_record[(node, nodes[a])]) * math.log(1 - new_record[(node, nodes[a])])) - \
+                            (len(self.D[node][3])+len(self.D[node][4]))*(len(self.D[nodes[a]][3])+len(self.D[nodes[a]][4]))*\
+                            (self.F[node][nodes[b]]['pro'] * math.log(self.F[node][nodes[b]]['pro']) + (1 - self.F[node][nodes[b]]['pro']) * math.log(1 - self.F[node][nodes[b]]['pro']))
+
+                        after_score += \
+                            (len(self.D[node][3]) + len(self.D[node][4])) * (new_record[this_top][1]+new_record[this_top][2]) * \
+                            (new_record[(node, this_top)] * math.log(new_record[(node, this_top)]) + (1 - new_record[(node, this_top)]) *
+                             math.log( 1 - new_record[(node, this_top)])) - \
                             (len(self.D[node][3]) + len(self.D[node][4])) * (len(self.D[this_top][3]) + len(self.D[this_top][4])) * \
                             (self.F[node][this_top]['pro'] * math.log(self.F[node][this_top]['pro']) + (1 - self.F[node][this_top]['pro']) *
                              math.log(1 - self.F[node][this_top]['pro']))
+                # calculate the probability between (thistop, nodes[a])
+
             # probability to exchange these two nodes O(1)
             prob = math.exp(self.args.epsilon2*(after_score-self.score)/self.sensitivity_sample)
             if random.uniform(0, 1) < prob:
