@@ -269,8 +269,6 @@ class GraphClusterWorker():
             else:
                 a = 0
                 b = 1
-            D_copy = self.D
-            F_copy = self.F
             ## renew the dendrogram
             #find all the parents of nodes[a], O(logN)
             parents = []
@@ -292,27 +290,31 @@ class GraphClusterWorker():
                     new_record[p] = [0,len(self.D[p][3])-len(remove)+len(add), len(self.D[p][4])]
                 else:
                     new_record[p] = [0, len(self.D[p][3]), len(self.D[p][4]) - len(remove)+len(add)]
+            ##############################################################
             # renew the probabilities of nodes O(logN*logN)
             new_key = (np.min((this_top, nodes[b])), np.max((this_top, nodes[b])))
             for p in parents:
                 pro, new_edge_node = self.calc_prob(new_record[p], p, nodes[b], nodes[a], new_key)
-                D_copy[p][2] = pro
+                new_record[p][0] = pro
                 local_edge_node[p] = new_edge_node
 
-            #renew the probabilities between clusters O(N)
-            F_copy.remove_node(nodes[b])
-            F_copy.add_node(nodes[a])
-            for node in F_copy.nodes:
-                if not node==nodes[a]:
-                    pro = self.calc_cluster_prob(D_copy,[node, nodes[a]], nodes[b], nodes[a], nodes[a])
-                    F_copy.add_edge(node, nodes[b])
-                    F_copy[node][nodes[a]]['pro'] = pro
-                if not node==this_top:
-                    pro = self.calc_cluster_prob(D_copy,[node, this_top], nodes[a], nodes[b], this_top)
-                    if not F_copy.has_edge(node, this_top):
-                        F_copy.add_edge(node, this_top)
-                    F_copy[node][this_top]['pro'] = pro
+            #renew the probabilities between clusters on new_record O(N)
+            for node in self.F.nodes():
+                if not (node==nodes[a] or node == this_top):
+                    key1 = (np.min((node, nodes[a])), np.max((node, nodes[a])))
+                    pro, new_edge_node = self.calc_cluster_prob([0, len(self.D[nodes[a]][3]), len(self.D[nodes[a][4]])],
+                                                                [node, nodes[a]], None, nodes[a], this_top)
+                    local_edge_node[key1] = new_edge_node
+                    new_record[(node, nodes[a])] = pro
 
+                    key1 = (np.min((node, this_top)), np.max((node, this_top)))
+                    pro, new_edge_node = self.calc_cluster_prob(new_record[this_top],[node, this_top],
+                                                                nodes[a], nodes[b], nodes[b])
+                    local_edge_node[key1] = new_edge_node
+                    new_record[(node, this_top)] = pro
+            # calculate the probabilities of (this_top, nodes[a])
+
+            #################################################################
             #calculate the utility function O(logN)
             if self.args.utility_sample == 'ave_pro':
                 for p in parents:
@@ -368,7 +370,7 @@ class GraphClusterWorker():
                         self.D[p][0] = nodes[b]
                     elif self.D[p][1] == nodes[a]:
                         self.D[p][1] = nodes[b]
-                # renew the fhildren of all the relative nodes
+                # renew the children of all the relative nodes
                 for p in parents:
                     if nodes[a] in self.D[p][3]:
                         left_right = 3
@@ -379,6 +381,10 @@ class GraphClusterWorker():
                     D_copy[p][left_right] += D_copy[nodes[b]][3] + D_copy[nodes[b]][4].append(nodes[b])
                 #################################################################################
                 # renew the probabilities of nodes
+
+                # renew the probabilities between clusters
+                self.F.remove_node(nodes[b])
+                self.F.add_node(nodes[a])
         else:  # both the nodes are not top nodes
             new_record = {}  # a dict that record the renewed probability and the renewd left and right length
             # of relative parent nodes
@@ -631,25 +637,25 @@ class GraphClusterWorker():
         """
         children1 = self.D[nodes[0]][3] + self.D[nodes[0]][4]
         children2 = self.D[nodes[1]][3] + self.D[nodes[1]][4]
-        total = len(children1) * new_len
+        total = len(children1) * (new_len[1]+new_len[2])
         # delete edges
         to_remove = []
-        key1 = (np.min((nodes[0], nodes[1])), np.max((nodes[0], nodes[1])))
-        for (u, v) in self.edge_node[key1]:
-            if (u in self.D[child_remove][3] + self.D[child_remove][4] and v in children2) or \
-                    (v in self.D[child_remove][3] + self.D[child_remove][4] and u in children2):
-                to_remove.append((u, v))
-        edge_node = [edge for edge in self.edge_node[key1] if edge not in to_remove]
-        # add edges
-        if nodes[0] == origin_top:
-            key = nodes[0]
+        if child_remove is not None:
+            key1 = (np.min((nodes[0], nodes[1])), np.max((nodes[0], nodes[1])))
+            for (u, v) in self.edge_node[key1]:
+                if (u in self.D[child_remove][3] + self.D[child_remove][4] and v in children2) or \
+                        (v in self.D[child_remove][3] + self.D[child_remove][4] and u in children2):
+                    to_remove.append((u, v))
+            edge_node = [edge for edge in self.edge_node[key1] if edge not in to_remove]
         else:
-            key = (np.min((nodes[0], origin_top)), np.max((nodes[0], origin_top)))
+            edge_node = []
+        # add edges
+        key = (np.min((nodes[0], origin_top)), np.max((nodes[0], origin_top)))
         for (u, v) in self.edge_node[key]:
             if (u in self.D[child_add][3] + self.D[child_add][4] and v in children2) or \
                     (v in self.D[child_add][3] + self.D[child_add][4] and u in children2):
                 edge_node.append((u, v))
-        num_edge = len(self.edge_node[key1])
+        num_edge = len(edge_node)
         return num_edge / total, edge_node
 
     def calc_tops_pro(self, top1, top2, node1, node2, new_rec_top1, new_rec_top2):
