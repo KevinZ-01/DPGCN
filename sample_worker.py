@@ -343,12 +343,14 @@ class GraphClusterWorker():
 
                         after_score += new_record[(node, this_top)] ** 2 * (len(self.D[node][3]) + len(self.D[node][4])) * (new_record[this_top][1] + new_record[this_top][2]) - \
                                        self.F[node][this_top]['pro'] ** 2 * (len(self.D[node][3]) + len(self.D[node][4])) * (len(self.D[this_top][3]) + len(self.D[this_top][4]))
-                # calculate the
+                # calculate the edges between this top and nodes[a], at the same time minus this top and nodes[b]
+                after_score += new_record[key] ** 2 * (new_record[this_top][1] + new_record[this_top][2]) * (new_record[nodes[a]][1] + new_record[nodes[a]][2]) - \
+                                       self.F[this_top][nodes[b]]['pro'] ** 2 * (len(self.D[this_top][3])+len(self.D[this_top][4])) * (len(self.D[nodes[b]][3])+len(self.D[nodes[b]][4]))
 
             elif self.args.utility_sample == 'log likelihood':
                 for p in parents:
-                    after_score = self.score + \
-                                  len(self.D[p][3])*len(self.D[p][4])* (self.D[p][2] * math.log(self.D[p][2]) + (1 - self.D[p][2]) * math.log(1 - self.D[p][2])) - \
+                    after_score = self.score - \
+                                  len(self.D[p][3])*len(self.D[p][4])* (self.D[p][2] * math.log(self.D[p][2]) + (1 - self.D[p][2]) * math.log(1 - self.D[p][2])) + \
                                   len(new_record[p][2])*len(new_record[p][1])* (new_record[p][0] * math.log(new_record[p][0]) + (1 - new_record[p][0]) * math.log(1 - new_record[p][0]))
                 # calculate the between-cluster information entropy that has been changed
                 for node in self.F.nodes():
@@ -366,7 +368,12 @@ class GraphClusterWorker():
                             (len(self.D[node][3]) + len(self.D[node][4])) * (len(self.D[this_top][3]) + len(self.D[this_top][4])) * \
                             (self.F[node][this_top]['pro'] * math.log(self.F[node][this_top]['pro']) + (1 - self.F[node][this_top]['pro']) *
                              math.log(1 - self.F[node][this_top]['pro']))
-                # calculate the probability between (thistop, nodes[a])
+                # calculate the score between (thistop, nodes[a])
+                after_score += \
+                            (new_record[this_top][1]+new_record[this_top][2])*(new_record[nodes[a]][1]+new_record[nodes[a]][2])*\
+                            (new_record[key] * math.log(new_record[key]) + (1 - new_record[key]) * math.log(1 - new_record[key])) - \
+                            (len(self.D[this_top][3])+len(self.D[this_top][4]))*(len(self.D[nodes[b]][3])+len(self.D[nodes[b]][4]))*\
+                            (self.F[this_top][nodes[b]]['pro'] * math.log(self.F[this_top][nodes[b]]['pro']) + (1 - self.F[this_top][nodes[b]]['pro']) * math.log(1 - self.F[node][nodes[b]]['pro']))
 
             # probability to exchange these two nodes O(1)
             prob = math.exp(self.args.epsilon2*(after_score-self.score)/self.sensitivity_sample)
@@ -380,20 +387,39 @@ class GraphClusterWorker():
                     elif self.D[p][1] == nodes[a]:
                         self.D[p][1] = nodes[b]
                 # renew the children of all the relative nodes
+                remove = self.D[nodes[a]][3] + self.D[nodes[a]][4]
+                remove.append(nodes[a])
+                add = self.D[nodes[b]][3] + self.D[nodes[b]][4]
+                add.append(nodes[b])
                 for p in parents:
                     if nodes[a] in self.D[p][3]:
                         left_right = 3
                     else:
                         left_right = 4
-                    remove = D_copy[nodes[a]][3] + D_copy[nodes[a]][4].append(nodes[a])
-                    D_copy[p][left_right] = [e for e in D_copy[p][left_right] if e not in remove]  # O(logN)
-                    D_copy[p][left_right] += D_copy[nodes[b]][3] + D_copy[nodes[b]][4].append(nodes[b])
-                #################################################################################
-                # renew the probabilities of nodes
 
-                # renew the probabilities between clusters
-                self.F.remove_node(nodes[b])
-                self.F.add_node(nodes[a])
+                    self.D[p][left_right] = [e for e in self.D[p][left_right] if e not in remove]
+                    self.D[p][left_right] += add
+                #################################################################################
+                    # renew the probability of nodes in dendrogram, and the edge_node pairs
+                    for p in parents:
+                        self.D[p][2] = new_record[p][0]
+                        self.edge_node[p] = local_edge_node[p]
+                    # renew the probability between clusters
+                    self.F.remove_node(nodes[b])
+                    self.F.add_node(nodes[a])
+                    for node in self.F.nodes():
+                        if not (node == this_top or node == nodes[a]):
+                            key1 = (np.min((node, this_top)), np.max((node, this_top)))
+                            self.F[node][this_top]['pro'] = new_record[(node, this_top)]
+                            self.edge_node[key1] = local_edge_node[key1]
+
+                            key1 = (np.min((node, nodes[a])), np.max((node, nodes[a])))
+                            self.F[node][nodes[a]]['pro'] = new_record[(node, nodes[a])]
+                            self.edge_node[key1] = local_edge_node[key1]
+
+                    self.F[this_top][nodes[a]]['pro'] = new_record[key]
+                    self.edge_node[new_key] = local_edge_node[key]
+                    ####################################################################
         else:  # both the nodes are not top nodes
             new_record = {}  # a dict that record the renewed probability and the renewd left and right length
             # of relative parent nodes
