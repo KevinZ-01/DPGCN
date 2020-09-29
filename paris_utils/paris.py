@@ -161,8 +161,8 @@ def private_paris(G, copy_graph = True, numofcluster = 1):
     cc = []
 
     # dendrogram as list of merges, initialize with leaf nodes of the dendrogram
-    #left , right, probability, left, right children, node number, parent, distance, size
-    D = {u: [None, None, None, [], [], u, None, None, None] for u in range(n)}
+    # left , right, probability, left, right internals children, node number, parent, distance, size, left and right leaf children
+    D = {u: [None, None, None, [], [], u, None, None, None, [], []] for u in range(n)}
 
     # scores of each cluster level
     if numofcluster == 1:
@@ -195,15 +195,19 @@ def private_paris(G, copy_graph = True, numofcluster = 1):
                     p = F[a][b]['weight'] / (s[a]*s[b])
                     # record the nodes under this merge
                     if a < N:
-                        left = [a]
+                        left_leaf = [a]
+                        left = []
                     else:
-                        left = D[a][3] + D[a][4]
+                        left = D[a][3] + D[a][4] + [a]
+                        left_leaf = D[a][9] + D[a][10]
                     if b < N:
-                        right = [b]
+                        right_leaf = [b]
+                        right = []
                     else:
-                        right = D[b][3] + D[b][4]
+                        right = D[b][3] + D[b][4] + [b]
+                        right_leaf = D[b][9] + D[b][10]
                     # merge a,b
-                    D[u] = [a, b, p, left, right, u, None, d, s[a]+s[b]]
+                    D[u] = [a, b, p, left, right, u, None, d, s[a]+s[b], left_leaf, right_leaf]
                     D[a][6] = u
                     D[b][6] = u
                     # renew top nodes
@@ -258,7 +262,7 @@ def private_paris(G, copy_graph = True, numofcluster = 1):
         else:
             for b, t in cc:
                 s += t
-                D[u] = [a, b, 0, D[a][3]+D[a][4], D[b][3]+D[b][4], u, None, float("inf"), s]
+                D[u] = [a, b, 0, D[a][3]+D[a][4], D[b][3]+D[b][4], u, None, float("inf"), s, D[a][9]+D[a][10], D[b][9]+D[b][10]]
                 ss[u] = s
                 D[a][6] = u
                 D[b][6] = u
